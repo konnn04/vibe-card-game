@@ -24,6 +24,7 @@ export interface SettingsState {
   username: string;
   avatarKey: string | null;   // key trong IndexedDB
   avatarPreset: number;       // avatar mặc định khi chưa upload
+  avatarUrl?: string | null;  // URL avatar từ Discord hoặc dịch vụ ngoài
   /**
    * Chủ đề nền dùng cho CẢ menu lẫn bàn chơi (src/lib/themes.ts). Thay cho
    * `tableSkin` cũ vốn chỉ đổi được mặt bàn 3D. Ở phòng online, chủ đề của CHỦ
@@ -58,6 +59,7 @@ export const useSettings = create<SettingsState>()(
       username: '',
       avatarKey: null,
       avatarPreset: 0,
+      avatarUrl: null,
       bgTheme: DEFAULT_THEME,
       set: (k, v) => set({ [k]: v } as Partial<SettingsState>),
     }),

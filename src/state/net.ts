@@ -5,7 +5,7 @@ import type { Action, Card, DeckType, GameEvent, GameState, Rules } from '@u-no/
 import type { BgTheme } from '@/src/lib/themes';
 import { NET } from '@/src/config';
 
-export interface NetSeat { id: string; name: string; isBot: boolean; avatarPreset: number }
+export interface NetSeat { id: string; name: string; isBot: boolean; avatarPreset: number; avatarUrl?: string | null }
 export interface NetRoom {
   code: string;
   hostId: string;

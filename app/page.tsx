@@ -7,7 +7,7 @@ import { useSettings } from '@/src/lib/settings';
 import { useMounted } from '@/src/lib/useMounted';
 import { randomName } from '@/src/lib/names';
 import { setMusicPlaying } from '@/src/lib/audio';
-import { discordRoomCode, isDiscordActivity } from '@/src/lib/discord';
+import { discordRoomCode, isDiscordActivity, getDiscordUser } from '@/src/lib/discord';
 import { clearRoomInUrl, roomCodeFromUrl, setRoomInUrl } from '@/src/lib/roomLink';
 import { useRoom, type Seat } from '@/src/state/room';
 import { useMatch } from '@/src/state/match';
@@ -46,8 +46,20 @@ function Shell() {
   useEffect(() => { screenRef.current = screen; }, [screen]);
 
   useEffect(() => {
-    if (!username) set('username', randomName());
-  }, [username, set]);
+    if (isDiscordActivity()) {
+      void getDiscordUser().then((user) => {
+        if (user) {
+          const displayName = user.globalName || user.username;
+          if (displayName) set('username', displayName);
+          if (user.avatarUrl) set('avatarUrl', user.avatarUrl);
+        } else if (!useSettings.getState().username) {
+          set('username', randomName());
+        }
+      });
+    } else if (!username) {
+      set('username', randomName());
+    }
+  }, [set, username]);
 
   /** Danh tính gửi lên server: id bền trong localStorage + tên/avatar hiện tại. */
   const netMe = useCallback((): NetSeat => ({
@@ -55,6 +67,7 @@ function Shell() {
     name: useSettings.getState().username || randomName(),
     isBot: false,
     avatarPreset: useSettings.getState().avatarPreset,
+    avatarUrl: useSettings.getState().avatarUrl ?? null,
   }), []);
 
   const localMe = useCallback((): Seat => ({
@@ -62,6 +75,7 @@ function Shell() {
     name: useSettings.getState().username || randomName(),
     isBot: false,
     avatarPreset: useSettings.getState().avatarPreset,
+    avatarUrl: useSettings.getState().avatarUrl ?? null,
     consecutiveRounds: 0,
   }), []);
 

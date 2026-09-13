@@ -12,6 +12,7 @@ export interface Seat {
   name: string;
   isBot: boolean;
   avatarPreset: number;
+  avatarUrl?: string | null;
   /** số ván liên tục đã chơi — dùng để xoay vòng hàng chờ (FIFO) */
   consecutiveRounds: number;
 }
@@ -63,7 +64,7 @@ export function makeBot(): Seat {
   };
 }
 
-const toSeat = (p: { id: string; name: string; isBot: boolean; avatarPreset: number } | null): Seat | null =>
+const toSeat = (p: { id: string; name: string; isBot: boolean; avatarPreset: number; avatarUrl?: string | null } | null): Seat | null =>
   p ? { ...p, consecutiveRounds: 0 } : null;
 
 /** Ở chế độ online mọi thay đổi phải qua server; helper này gọi API rồi chờ broadcast. */

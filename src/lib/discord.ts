@@ -1,10 +1,10 @@
 'use client';
 
+import { DiscordSDK } from '@discord/embedded-app-sdk';
+
 /**
  * Discord Activity chạy trong iframe và truyền tham số qua query string
  * (`frame_id`, `instance_id`, `channel_id`, `guild_id`).
- * Bản FE-only này chỉ dùng chúng để nhận diện môi trường + lấy roomId mặc định;
- * OAuth thật (`@discord/embedded-app-sdk` + token exchange) cần backend nên chưa bật.
  */
 export function discordParams(): URLSearchParams | null {
   if (typeof window === 'undefined') return null;
@@ -14,7 +14,7 @@ export function discordParams(): URLSearchParams | null {
 export function isDiscordActivity(): boolean {
   const q = discordParams();
   if (!q) return false;
-  const inIframe = window.self !== window.top;
+  const inIframe = typeof window !== 'undefined' && window.self !== window.top;
   return inIframe && (q.has('frame_id') || q.has('instance_id'));
 }
 
@@ -23,4 +23,137 @@ export function discordRoomCode(): string | null {
   const q = discordParams();
   const id = q?.get('instance_id');
   return id ? id.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase() : null;
+}
+
+export interface DiscordUser {
+  id: string;
+  username: string;
+  discriminator?: string;
+  globalName: string | null;
+  avatarUrl: string | null;
+}
+
+let discordSdkInstance: DiscordSDK | null = null;
+let initPromise: Promise<DiscordSDK | null> | null = null;
+
+export function getDiscordSdk(): DiscordSDK | null {
+  if (typeof window === 'undefined' || !isDiscordActivity()) return null;
+  if (!discordSdkInstance) {
+    const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || '1459138901586219091';
+    discordSdkInstance = new DiscordSDK(clientId, { disableConsoleLogOverride: true });
+  }
+  return discordSdkInstance;
+}
+
+export async function initDiscordSdk(): Promise<DiscordSDK | null> {
+  const sdk = getDiscordSdk();
+  if (!sdk) return null;
+  if (initPromise) return initPromise;
+
+  initPromise = (async () => {
+    try {
+      await sdk.ready();
+      return sdk;
+    } catch (e) {
+      console.warn('[Discord SDK] ready failed:', e);
+      return null;
+    }
+  })();
+
+  return initPromise;
+}
+
+export function formatDiscordAvatarUrl(userId: string, avatarHash?: string | null): string {
+  if (avatarHash) {
+    return `https://cdn.discordapp.com/avatars/${userId}/${avatarHash}.png?size=128`;
+  }
+  try {
+    const index = Number((BigInt(userId) >> BigInt(22)) % BigInt(6));
+    return `https://cdn.discordapp.com/embed/avatars/${index}.png`;
+  } catch {
+    return 'https://cdn.discordapp.com/embed/avatars/0.png';
+  }
+}
+
+/**
+ * Lấy thông tin người dùng từ Discord SDK:
+ * 1. Thử xác thực OAuth2 (cần DISCORD_CLIENT_SECRET trên server)
+ * 2. Fallback: đọc danh sách participants từ SDK (không cần secret)
+ */
+export async function getDiscordUser(): Promise<DiscordUser | null> {
+  const sdk = await initDiscordSdk();
+  if (!sdk) return null;
+
+  // 1. Thử OAuth2
+  try {
+    const { code } = await sdk.commands.authorize({
+      client_id: sdk.clientId,
+      response_type: 'code',
+      state: '',
+      prompt: 'none',
+      scope: ['identify', 'guilds.members.read'],
+    });
+
+    const res = await fetch('/api/discord/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+
+    if (res.ok) {
+      const { access_token } = (await res.json()) as { access_token?: string };
+      if (access_token) {
+        const auth = await sdk.commands.authenticate({ access_token });
+        if (auth?.user) {
+          const u = auth.user;
+          return {
+            id: u.id,
+            username: u.username,
+            discriminator: u.discriminator,
+            globalName: u.global_name ?? null,
+            avatarUrl: formatDiscordAvatarUrl(u.id, u.avatar),
+          };
+        }
+      }
+    } else {
+      const err = await res.json().catch(() => ({}));
+      console.warn('[Discord SDK] OAuth token exchange skipped/failed:', err?.error);
+    }
+  } catch (e) {
+    console.warn('[Discord SDK] OAuth flow error:', e);
+  }
+
+  // 2. Fallback: lấy từ instance connected participants
+  try {
+    const res = await sdk.commands.getInstanceConnectedParticipants();
+    if (res?.participants && res.participants.length > 0) {
+      const p = res.participants[0];
+      return {
+        id: p.id,
+        username: p.username,
+        discriminator: p.discriminator,
+        globalName: p.global_name || p.nickname || null,
+        avatarUrl: formatDiscordAvatarUrl(p.id, p.avatar),
+      };
+    }
+  } catch (e) {
+    console.warn('[Discord SDK] getInstanceConnectedParticipants failed:', e);
+  }
+
+  return null;
+}
+
+/**
+ * Mở modal mời bạn bè trong kênh voice của Discord
+ */
+export async function openDiscordInvite(): Promise<boolean> {
+  const sdk = await initDiscordSdk();
+  if (!sdk) return false;
+  try {
+    await sdk.commands.openInviteDialog();
+    return true;
+  } catch (e) {
+    console.warn('[Discord SDK] openInviteDialog failed:', e);
+    return false;
+  }
 }

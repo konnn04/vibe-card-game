@@ -13,6 +13,7 @@ export interface RoomPlayer {
   name: string;
   isBot: boolean;
   avatarPreset: number;
+  avatarUrl?: string | null;
 }
 
 export interface RoomRecord {

@@ -87,43 +87,43 @@ function playBuffer(buf: AudioBuffer, vol: number, rate: number) {
 interface Spec { f: number; to: number; dur: number; type: OscillatorType; gain: number }
 
 const SPEC: Record<Sfx, Spec> = {
-  whoosh:        { f: 900, to: 180,  dur: 0.16, type: 'triangle', gain: 0.18 },
-  place:         { f: 320, to: 120,  dur: 0.10, type: 'square',   gain: 0.22 },
-  action:        { f: 260, to: 70,   dur: 0.22, type: 'sawtooth', gain: 0.26 },
-  draw:          { f: 520, to: 660,  dur: 0.09, type: 'triangle', gain: 0.16 },
-  penalty:       { f: 300, to: 90,   dur: 0.30, type: 'sawtooth', gain: 0.20 },
+  whoosh: { f: 900, to: 180, dur: 0.16, type: 'triangle', gain: 0.18 },
+  place: { f: 320, to: 120, dur: 0.10, type: 'square', gain: 0.22 },
+  action: { f: 260, to: 70, dur: 0.22, type: 'sawtooth', gain: 0.26 },
+  draw: { f: 520, to: 660, dur: 0.09, type: 'triangle', gain: 0.16 },
+  penalty: { f: 300, to: 90, dur: 0.30, type: 'sawtooth', gain: 0.20 },
   // Cấm lượt: hai nốt cụt, dứt khoát như đóng sập cửa.
-  playSkip:      { f: 520, to: 180,  dur: 0.18, type: 'square',   gain: 0.24 },
+  playSkip: { f: 520, to: 180, dur: 0.18, type: 'square', gain: 0.24 },
   // Rút nhẹ (+1/+2): đi lên, gọn.
-  playDraw2:     { f: 240, to: 520,  dur: 0.20, type: 'square',   gain: 0.24 },
+  playDraw2: { f: 240, to: 520, dur: 0.20, type: 'square', gain: 0.24 },
   // Rút nặng (+4/+5/Wild+2): trầm và dày hơn hẳn, nghe là biết ăn đòn to.
-  playDraw4:     { f: 160, to: 420,  dur: 0.34, type: 'sawtooth', gain: 0.28 },
+  playDraw4: { f: 160, to: 420, dur: 0.34, type: 'sawtooth', gain: 0.28 },
   // Rút tới khi ra màu: dài, lê thê — đúng cảm giác rút mãi không thôi.
-  playDrawUntil: { f: 200, to: 120,  dur: 0.52, type: 'sawtooth', gain: 0.26 },
+  playDrawUntil: { f: 200, to: 120, dur: 0.52, type: 'sawtooth', gain: 0.26 },
   // Lá Flip: quét nhanh, gợi cú lật.
-  playFlipCard:  { f: 420, to: 880,  dur: 0.20, type: 'triangle', gain: 0.22 },
-  rush:          { f: 440, to: 880,  dur: 0.32, type: 'sawtooth', gain: 0.22 },
+  playFlipCard: { f: 420, to: 880, dur: 0.20, type: 'triangle', gain: 0.22 },
+  rush: { f: 440, to: 880, dur: 0.32, type: 'sawtooth', gain: 0.22 },
   // Bị cấm lượt: trầm, cụt, nghe như bị chặn đứng lại.
-  skipped:       { f: 300, to: 120,  dur: 0.26, type: 'square',   gain: 0.22 },
-  caught:        { f: 380, to: 110,  dur: 0.34, type: 'square',   gain: 0.24 },
+  skipped: { f: 300, to: 120, dur: 0.26, type: 'square', gain: 0.22 },
+  caught: { f: 380, to: 110, dur: 0.34, type: 'square', gain: 0.24 },
   // Bắt lỗi: tiếng "gõ búa" ngắn, căng thẳng, chưa biết đúng sai
-  challenge:     { f: 180, to: 150,  dur: 0.14, type: 'square',   gain: 0.26 },
-  challengeWin:  { f: 523, to: 1318, dur: 0.42, type: 'triangle', gain: 0.26 },
-  challengeLose: { f: 420, to: 80,   dur: 0.46, type: 'sawtooth', gain: 0.24 },
+  challenge: { f: 180, to: 150, dur: 0.14, type: 'square', gain: 0.26 },
+  challengeWin: { f: 523, to: 1318, dur: 0.42, type: 'triangle', gain: 0.26 },
+  challengeLose: { f: 420, to: 80, dur: 0.46, type: 'sawtooth', gain: 0.24 },
   // Đổi chiều: quét XUỐNG rồi lên, gợi cảm giác quay đầu.
-  reverse:       { f: 700, to: 300,  dur: 0.22, type: 'triangle', gain: 0.20 },
+  reverse: { f: 700, to: 300, dur: 0.22, type: 'triangle', gain: 0.20 },
   // Chọn màu: nốt trong trẻo, ngắn, không lấn tiếng đặt bài ngay trước đó.
-  color:         { f: 660, to: 990,  dur: 0.18, type: 'sine',     gain: 0.18 },
+  color: { f: 660, to: 990, dur: 0.18, type: 'sine', gain: 0.18 },
   // Đánh chen: sắc và gấp — cướp lượt phải nghe ra là "chen ngang".
-  jumpIn:        { f: 980, to: 520,  dur: 0.16, type: 'square',   gain: 0.24 },
-  flip:          { f: 200, to: 700,  dur: 0.28, type: 'sine',     gain: 0.20 },
-  swap:          { f: 620, to: 300,  dur: 0.26, type: 'triangle', gain: 0.20 },
-  win:           { f: 523, to: 1046, dur: 0.55, type: 'triangle', gain: 0.25 },
-  click:         { f: 700, to: 700,  dur: 0.045, type: 'sine',    gain: 0.14 },
+  jumpIn: { f: 980, to: 520, dur: 0.16, type: 'square', gain: 0.24 },
+  flip: { f: 200, to: 700, dur: 0.28, type: 'sine', gain: 0.20 },
+  swap: { f: 620, to: 300, dur: 0.26, type: 'triangle', gain: 0.20 },
+  win: { f: 523, to: 1046, dur: 0.55, type: 'triangle', gain: 0.25 },
+  click: { f: 700, to: 700, dur: 0.045, type: 'sine', gain: 0.14 },
   // Đếm ngược: tiếng "tick" gọn, cao độ cố định để 5 nhịp nghe đều nhau.
-  countdown:     { f: 880, to: 880,  dur: 0.09, type: 'square',   gain: 0.20 },
+  countdown: { f: 880, to: 880, dur: 0.09, type: 'square', gain: 0.20 },
   // Vào trận: quét lên, dứt khoát hơn hẳn tiếng tick.
-  gameStart:     { f: 330, to: 990,  dur: 0.42, type: 'sawtooth', gain: 0.26 },
+  gameStart: { f: 330, to: 990, dur: 0.42, type: 'sawtooth', gain: 0.26 },
 };
 
 function synth(spec: Spec, vol: number, rate: number) {
@@ -201,7 +201,7 @@ interface MusicManifest { default: string | null; tracks: MusicTrack[] }
 /** Mượt hơn cắt nấc: mọi tham số đổi theo hằng số thời gian này. */
 const GLIDE = 0.45;
 /** Mặt Dark: tần số cắt + tỉ lệ vang + hệ số âm lượng. */
-const DARK = { cutoff: 620, wet: 0.62, dry: 0.4, volume: 0.62 };
+const DARK = { cutoff: 620, wet: 0.62, dry: 0.4, volume: 1 };
 const LIGHT = { cutoff: 20000, wet: 0, dry: 1, volume: 1 };
 
 export function loadMusicManifest(): Promise<MusicManifest> {
@@ -209,13 +209,13 @@ export function loadMusicManifest(): Promise<MusicManifest> {
   // gần như cùng lúc, memo theo kết quả vẫn để lọt 2 request.
   if (manifestLoad) return manifestLoad;
   manifestLoad = (async () => {
-  try {
-    const res = await fetch('/music-theme/manifest.json');
-    manifest = res.ok ? ((await res.json()) as MusicManifest) : { default: null, tracks: [] };
-  } catch {
-    manifest = { default: null, tracks: [] };
-  }
-  return manifest;
+    try {
+      const res = await fetch('/music-theme/manifest.json');
+      manifest = res.ok ? ((await res.json()) as MusicManifest) : { default: null, tracks: [] };
+    } catch {
+      manifest = { default: null, tracks: [] };
+    }
+    return manifest;
   })();
   return manifestLoad;
 }

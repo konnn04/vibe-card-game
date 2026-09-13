@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { currentMusicTitle, onMusicChange, playSfx } from '@/src/lib/audio';
 import { useSettings } from '@/src/lib/settings';
 import { themeMeta, THEMES } from '@/src/lib/themes';
-import { isDiscordActivity } from '@/src/lib/discord';
+import { isDiscordActivity, openDiscordInvite } from '@/src/lib/discord';
 import { useActiveTheme } from '@/src/state/room';
 import { Avatar } from './Avatar';
 import { Backdrop } from './Backdrop';
@@ -53,8 +53,12 @@ const FAN_BOTTOM = 152;
 function useStageScale(): number {
   const [scale, setScale] = useState(1);
   useEffect(() => {
-    const measure = () =>
-      setScale(Math.max(0.42, Math.min(1, window.innerWidth / DESIGN_W, window.innerHeight / DESIGN_H)));
+    const measure = () => {
+      const isDiscord = isDiscordActivity();
+      const baseScale = Math.min(window.innerWidth / DESIGN_W, window.innerHeight / DESIGN_H);
+      const factor = isDiscord ? 0.85 : 1;
+      setScale(Math.max(0.38, Math.min(1, baseScale * factor)));
+    };
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
@@ -158,7 +162,7 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
   const musicTitle = useMusicTitle();
 
   const [code, setCode] = useState(discordCode ?? '');
-  const [joining, setJoining] = useState(!!discordCode);
+  const [joining, setJoining] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
 
   const cards: FanCard[] = [
@@ -245,22 +249,62 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
       )}
 
       {/* Thẻ người chơi */}
-      <button
-        onClick={() => { playSfx('click'); onProfile(); }}
-        className="absolute flex items-center gap-3 rounded-full py-2.5 pl-2.5 pr-5 text-left"
-        style={{ left: 34, top: 30, background: 'rgba(24,15,18,.82)', border: '1px solid rgba(255,196,128,.3)', boxShadow: '0 12px 28px rgba(0,0,0,.5)' }}
+      <div
+        className="absolute z-20 flex items-center gap-3 rounded-full py-2 pl-2 pr-4 text-left"
+        style={{
+          left: Math.max(16, 34 * scale),
+          top: Math.max(16, 30 * scale),
+          background: 'rgba(24,15,18,.82)',
+          border: '1px solid rgba(255,196,128,.3)',
+          boxShadow: '0 12px 28px rgba(0,0,0,.5)',
+        }}
       >
-        <Avatar name={username} preset={avatarPreset} size={58} useStored className="!h-[58px] !w-[58px] rounded-full overflow-hidden" />
-        <span>
-          <span className="display block text-[23px] leading-none text-[#FFE9C2]">{username}</span>
-          <span className="label block text-[12px] tracking-[.16em] text-[#C79A6C]">
-            {isDiscordActivity() ? t('discordHint') : t('subtitle')}
+        <button
+          onClick={() => { playSfx('click'); onProfile(); }}
+          className="flex items-center gap-2.5 text-left focus:outline-none"
+        >
+          <Avatar
+            name={username}
+            preset={avatarPreset}
+            size={scale < 0.8 ? 44 : 54}
+            useStored
+            className="!rounded-full overflow-hidden"
+          />
+          <span>
+            <span className="display block leading-none text-[#FFE9C2]" style={{ fontSize: scale < 0.8 ? 18 : 22 }}>
+              {username}
+            </span>
+            <span className="label block text-[11px] tracking-[.14em] text-[#C79A6C]">
+              {isDiscordActivity() ? t('discordHint') : t('subtitle')}
+            </span>
           </span>
-        </span>
-      </button>
+        </button>
+
+        {isDiscordActivity() && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              playSfx('click');
+              void openDiscordInvite();
+            }}
+            className="label ml-1 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase transition-all hover:scale-105"
+            style={{
+              background: 'linear-gradient(135deg, #5865F2, #4752C4)',
+              border: '1px solid rgba(255,255,255,.3)',
+              color: '#FFFFFF',
+              boxShadow: '0 2px 8px rgba(88,101,242,.4)',
+            }}
+            title={t('inviteVoice')}
+          >
+            <span>👥</span>
+            <span>{t('inviteVoice')}</span>
+          </button>
+        )}
+      </div>
 
       {/* Nút tròn góc phải: hướng dẫn, nhạc, cài đặt */}
-      <div className="absolute flex gap-2.5" style={{ right: 30, top: 30 }}>
+      <div className="absolute flex gap-2.5" style={{ right: Math.max(16, 30 * scale), top: Math.max(16, 30 * scale) }}>
         <button className={roundBtn} style={roundStyle} onClick={() => { playSfx('click'); onHowTo(); }} aria-label={t('howTo')} title={t('howTo')}>
           <span className="display text-[20px]">i</span>
         </button>
@@ -273,7 +317,7 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
       </div>
 
       {/* Đang phát + đổi nền nhanh */}
-      <div className="absolute flex flex-col items-end gap-2" style={{ right: 30, top: 94 }}>
+      <div className="absolute flex flex-col items-end gap-2" style={{ right: Math.max(16, 30 * scale), top: Math.max(68, 94 * scale) }}>
         {musicTitle && (
           <div
             className="label max-w-[280px] truncate rounded-[10px] px-4 py-2 text-[12px] tracking-[.2em] uppercase"

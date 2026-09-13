@@ -74,7 +74,7 @@ export function DealIntro({ onDone }: { onDone: () => void }) {
             animate={{ y: 0, opacity: 1, scale: 1 }}
             transition={{ delay: 0.12 * i, type: 'spring', stiffness: 260, damping: 20 }}
           >
-            <Avatar name={s!.name} preset={s!.avatarPreset} size={56} useStored={!s!.isBot} className="seat__avatar !h-14 !w-14" />
+            <Avatar name={s!.name} preset={s!.avatarPreset} size={56} avatarUrl={s!.avatarUrl} useStored={!s!.isBot} className="seat__avatar !h-14 !w-14" />
             <span className="display text-[16px] text-[#FFF3DA]">{s!.name}</span>
           </motion.div>
         ))}
