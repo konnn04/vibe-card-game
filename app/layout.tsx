@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Baloo_2, Barlow_Semi_Condensed } from 'next/font/google';
+import { VersionBadge } from '@/src/ui/VersionBadge';
 import './globals.css';
 
 // Baloo 2 = chữ hiển thị/số trên lá bài; Barlow Semi Condensed = nhãn viết hoa giãn chữ
@@ -53,7 +54,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="vi" className={`${baloo.variable} ${barlow.variable} h-full antialiased`}>
-      <body className="h-full">{children}</body>
+      <body className="h-full">
+        {children}
+        <VersionBadge />
+      </body>
     </html>
   );
 }

@@ -32,6 +32,8 @@ function git(...args) {
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 /** major.minor lấy từ package.json — chỉ đổi khi CON NGƯỜI quyết định. */
 const [major = '0', minor = '0'] = String(pkg.version ?? '0.0.0').split('.');
+/** Tên người ghi công, lấy thẳng từ field "author" trong package.json. */
+const author = typeof pkg.author === 'string' ? pkg.author : (pkg.author?.name ?? '');
 
 /*
  * Trong image Docker KHÔNG có thư mục .git (xem .dockerignore), nên git() trả
@@ -66,6 +68,8 @@ export const BUILD = {
   dirty: ${dirty},
   /** Chuỗi hiển thị cho người dùng, vd "v0.1.248+9f2c1ab". */
   label: ${JSON.stringify(label)},
+  /** Tên người ghi công, từ field "author" trong package.json. */
+  author: ${JSON.stringify(author)},
 } as const;
 `,
 );

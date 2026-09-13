@@ -218,6 +218,17 @@ const STEP_SPECTATOR_SLOT = 6;
 /** Chặn chính mình gửi dồn khi server chậm trả lời. */
 const STEP_MIN_GAP_MS = 400;
 let lastStepAt = 0;
+/**
+ * Request `step` trước còn đang treo thì KHÔNG bắn thêm cái mới.
+ *
+ * STEP_MIN_GAP_MS chỉ chặn theo THỜI GIAN gửi, không biết request trước đã
+ * xong chưa. Một round-trip step thường mất cỡ trăm ms, nhưng lúc phòng đang
+ * tranh lock (nhiều client cùng gõ nhịp) có thể kéo dài quá 1-2s — lúc đó mốc
+ * 400ms trôi qua rất nhiều lần trong khi request cũ vẫn treo, và mỗi lần lại
+ * bắn thêm một request mới chồng lên, càng làm lock tranh chấp nặng hơn. Cờ
+ * này đảm bảo tại một thời điểm CHÍNH MÌNH chỉ có đúng một step đang bay.
+ */
+let stepInFlight = false;
 
 /**
  * Tình trạng mạng cả phòng, do room.ts đẩy sang.
@@ -281,20 +292,28 @@ function planStep() {
   const rank = mine >= 0 ? mine : STEP_SPECTATOR_SLOT;
 
   const wait = Math.max(0, dueAt - serverNow()) + rank * STEP_SLOT_MS;
+  // Sàn STEP_MIN_GAP_MS: mốc đã quá hạn thì wait tính ra 0, và nếu cứ hẹn lại
+  // đúng 0ms mỗi vòng thì trong lúc request cũ còn treo (stepInFlight chặn
+  // fireStep) nó xoay thành vòng lặp setTimeout(0) rỗng liên tục thay vì đứng
+  // yên chờ. Sàn theo đúng nhịp gửi tối thiểu, không tốn thêm độ trễ thật nào.
   stepTimer = setTimeout(() => {
     stepTimer = null;
     fireStep();
     // Chưa xong thì tự hẹn lại; xong rồi thì state đổi và applyRemote sẽ hẹn mới.
     planStep();
-  }, Math.max(wait, 0));
+  }, Math.max(wait, STEP_MIN_GAP_MS));
 }
 
 function fireStep() {
   const { mode, code, myId } = useMatch.getState();
   if (mode !== 'online' || !code) return;
+  if (stepInFlight) return;
   if (Date.now() - lastStepAt < STEP_MIN_GAP_MS) return;
   lastStepAt = Date.now();
-  void api.step(code, myId, loadToken(code)).catch(() => {});
+  stepInFlight = true;
+  void api.step(code, myId, loadToken(code))
+    .catch(() => {})
+    .finally(() => { stepInFlight = false; });
 }
 
 let botTimers: ReturnType<typeof setTimeout>[] = [];
