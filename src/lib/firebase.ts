@@ -1,6 +1,10 @@
 'use client';
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
-import { getDatabase, type Database } from 'firebase/database';
+import {
+  getDatabase,
+  forceWebSockets,
+  type Database,
+} from 'firebase/database';
 import { setupDiscordUrlMappings } from './discord';
 
 const config = {
@@ -26,7 +30,8 @@ export function getFirebaseClientDb(): Database | null {
   try {
     setupDiscordUrlMappings();
     app = getApps().length > 0 ? getApp() : initializeApp(config);
-    db = getDatabase(app, config.databaseURL);
+    forceWebSockets();
+    db = getDatabase(app);
     return db;
   } catch (err) {
     console.error('[FirebaseClient] Initialization failed:', err);

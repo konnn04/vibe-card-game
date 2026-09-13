@@ -11,7 +11,15 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/(.*)',
-        headers: [{ key: 'Content-Security-Policy', value: "frame-ancestors 'self' https://*.discord.com https://discord.com" }],
+        headers: [{
+          key: 'Content-Security-Policy',
+          value: `
+    frame-ancestors 'self' https://*.discord.com https://discord.com;
+    connect-src 'self'
+      ${firebaseDbUrl}
+      ${firebaseDbUrl.replace('https://', 'wss://')}
+  `.replace(/\n/g, ' ')
+        }],
       },
     ];
   },
