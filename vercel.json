@@ -1,27 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-
-  "_comment_regions": [
-    "CHẠY HÀM Ở CẠNH DATABASE. Đây là thiết lập quan trọng nhất của cả file.",
-    "",
-    "Firebase RTDB của dự án nằm ở asia-southeast1 (Singapore). Vercel mặc định",
-    "chạy hàm ở iad1 (Washington DC), tức mỗi lượt gọi database phải vượt Thái",
-    "Bình Dương. Mà MỘT hành động của người chơi đi qua 5 lượt khứ hồi: chiếm",
-    "khoá -> đọc phòng -> ghi phòng -> broadcast -> nhả khoá.",
-    "",
-    "  iad1: ~220ms/lượt -> ~1.1 GIÂY mỗi nước đi, và khoá phòng bị giữ suốt",
-    "        chừng đó. withLock chỉ thử lại trong ~1.2s rồi ném 'room-busy' —",
-    "        nên hai người bấm gần nhau là đụng nhau ngay. Đúng triệu chứng",
-    "        'phòng hay bị nghẽn'.",
-    "  sin1: ~12ms/lượt -> ~60ms mỗi nước đi. Nhanh gấp ~20 lần và gần như",
-    "        không còn tranh khoá.",
-    "",
-    "ĐỔI DATABASE SANG VÙNG KHÁC THÌ PHẢI ĐỔI DÒNG NÀY THEO. Quy tắc: chọn vùng",
-    "Vercel gần database nhất, không phải gần người chơi nhất — người chơi chỉ",
-    "tải tài nguyên tĩnh (đã có CDN lo), còn mỗi nước đi thì phải đi tới database.",
-    "",
-    "Gói Hobby chỉ cho chọn MỘT vùng. Nếu deploy báo lỗi vùng, đặt tay ở",
-    "Project Settings -> Functions -> Function Region."
-  ],
   "regions": ["sin1"]
 }
