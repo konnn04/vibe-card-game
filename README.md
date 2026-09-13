@@ -297,10 +297,21 @@ the same five trips cost ~60ms.
 *database*, not the players — players only fetch static assets, which the CDN
 already handles, but every move has to reach the database.
 
+`vercel.json` is deliberately two lines: Vercel validates it against a strict
+schema and **rejects any key it does not recognise**, including `_comment`-style
+keys, so the reasoning has to live here instead of next to the value. Do not
+delete `regions` thinking it is decoration.
+
+On the Hobby plan only one region is allowed. If a deploy complains about the
+region, set it instead at *Project Settings → Functions → Function Region*.
+
 Two more Vercel specifics:
 
-- `FIREBASE_SERVICE_ACCOUNT_KEY` must be **raw JSON or base64**, not a file
-  path. There is no filesystem to mount a key into.
+- `FIREBASE_SERVICE_ACCOUNT_KEY` accepts a service account as **raw JSON or
+  base64**, or a **legacy Realtime Database secret** (a ~40-character token —
+  `firebaseAdmin.ts` detects which it got and switches between the Admin SDK and
+  the REST API accordingly). What it cannot be on Vercel is a **file path**:
+  there is no filesystem to mount a key into.
 - The server's own `setTimeout` room stepper is disabled on serverless (it can
   never fire once the response is sent). The match is driven entirely by the
   client heartbeat at `/api/rooms/[code]/step` — see
