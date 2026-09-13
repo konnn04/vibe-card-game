@@ -98,69 +98,58 @@ export function formatDiscordAvatarUrl(userId: string, avatarHash?: string | nul
   }
 }
 
+let userPromise: Promise<DiscordUser | null> | null = null;
+
 /**
- * Lấy thông tin người dùng từ Discord SDK:
- * 1. Thử xác thực OAuth2 (cần DISCORD_CLIENT_SECRET trên server)
- * 2. Fallback: đọc danh sách participants từ SDK (không cần secret)
+ * Lấy thông tin người dùng từ Discord SDK qua luồng OAuth2:
+ * 1. sdk.commands.authorize()
+ * 2. Trao đổi code lấy access_token qua /api/discord/token (cần DISCORD_CLIENT_SECRET)
+ * 3. sdk.commands.authenticate({ access_token })
  */
 export async function getDiscordUser(): Promise<DiscordUser | null> {
   const sdk = await initDiscordSdk();
   if (!sdk) return null;
+  if (userPromise) return userPromise;
 
-  // 1. Thử lấy từ activity instance participants (không cần OAuth)
-  try {
-    const res = await sdk.commands.getActivityInstanceConnectedParticipants();
-    if (res?.participants && res.participants.length > 0) {
-      const p = res.participants[0];
-      return {
-        id: p.id,
-        username: p.username,
-        discriminator: p.discriminator,
-        globalName: p.global_name || p.nickname || null,
-        avatarUrl: formatDiscordAvatarUrl(p.id, p.avatar),
-      };
-    }
-  } catch (e) {
-    console.warn('[Discord SDK] getActivityInstanceConnectedParticipants failed:', e);
-  }
+  userPromise = (async () => {
+    try {
+      const { code } = await sdk.commands.authorize({
+        client_id: sdk.clientId,
+        response_type: 'code',
+        state: '',
+        prompt: 'none',
+        scope: ['identify'],
+      });
 
-  // 2. Fallback: OAuth2 (chỉ khi server có DISCORD_CLIENT_SECRET)
-  try {
-    const { code } = await sdk.commands.authorize({
-      client_id: sdk.clientId,
-      response_type: 'code',
-      state: '',
-      prompt: 'none',
-      scope: ['identify'],
-    });
+      const res = await fetch('/api/discord/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
 
-    const res = await fetch('/api/discord/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
-    });
-
-    if (res.ok) {
-      const { access_token } = (await res.json()) as { access_token?: string };
-      if (access_token) {
-        const auth = await sdk.commands.authenticate({ access_token });
-        if (auth?.user) {
-          const u = auth.user;
-          return {
-            id: u.id,
-            username: u.username,
-            discriminator: u.discriminator,
-            globalName: u.global_name ?? null,
-            avatarUrl: formatDiscordAvatarUrl(u.id, u.avatar),
-          };
+      if (res.ok) {
+        const { access_token } = (await res.json()) as { access_token?: string };
+        if (access_token) {
+          const auth = await sdk.commands.authenticate({ access_token });
+          if (auth?.user) {
+            const u = auth.user;
+            return {
+              id: u.id,
+              username: u.username,
+              discriminator: u.discriminator,
+              globalName: u.global_name ?? null,
+              avatarUrl: formatDiscordAvatarUrl(u.id, u.avatar),
+            };
+          }
         }
       }
+    } catch (e) {
+      console.warn('[Discord SDK] authorize/authenticate failed:', e);
     }
-  } catch {
-    // OAuth không khả dụng — bỏ qua im lặng, game vẫn chạy với tên ngẫu nhiên
-  }
+    return null;
+  })();
 
-  return null;
+  return userPromise;
 }
 
 /**

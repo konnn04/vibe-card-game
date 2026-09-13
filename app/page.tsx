@@ -56,10 +56,10 @@ function Shell() {
           set('username', randomName());
         }
       });
-    } else if (!username) {
+    } else if (!useSettings.getState().username) {
       set('username', randomName());
     }
-  }, [set, username]);
+  }, [set]);
 
   /** Danh tính gửi lên server: id bền trong localStorage + tên/avatar hiện tại. */
   const netMe = useCallback((): NetSeat => ({
