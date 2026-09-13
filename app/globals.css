@@ -1,0 +1,312 @@
+@import "tailwindcss";
+
+/* ============================================================
+   RUSH! design tokens — theo "RUSH Card Game UI.dc.html"
+   ============================================================ */
+:root {
+  --gold: #FFD34D;
+  --gold-2: #FF9E2C;
+  --amber: #FFB534;
+  --cream: #FFF3DA;
+  --tan: #E7B98C;
+  --tan-2: #C79A76;
+  --ink: #2A1508;
+  --ink-2: #6A3A12;
+
+  --c-red: #E23B2E;
+  --c-yellow: #F5C215;
+  --c-green: #37A64A;
+  --c-blue: #1B72C4;
+  --c-blue-2: #2F86D6;
+
+  --panel: rgba(28, 10, 16, 0.55);
+  --panel-2: rgba(12, 4, 8, 0.6);
+  --line: rgba(255, 215, 140, 0.3);
+  --line-2: rgba(255, 215, 140, 0.45);
+
+  --violet-bg: linear-gradient(160deg, #241536, #170D22 60%, #0F0818);
+  --violet-ink: #F3ECFA;
+  --violet-muted: #A48AC8;
+
+  --table-bg: radial-gradient(ellipse 60% 56% at 50% 44%, #FFA347 0%, #E8451F 34%, #9E0F16 68%, #40040A 100%);
+  --menu-bg: radial-gradient(ellipse 58% 52% at 50% 30%, #C2481B 0%, #8A1414 34%, #4A060C 66%, #1C0305 100%);
+}
+
+@theme inline {
+  --color-gold: var(--gold);
+  --color-cream: var(--cream);
+  --color-ink: var(--ink);
+  --font-display: var(--font-baloo);
+  --font-sans: var(--font-barlow);
+}
+
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: #141018;
+  color: var(--cream);
+  font-family: var(--font-barlow), 'Barlow Semi Condensed', system-ui, sans-serif;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* ---------- typography ---------- */
+.display { font-family: var(--font-baloo), 'Baloo 2', cursive; font-weight: 800; line-height: 1; }
+.label {
+  font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+  font-family: var(--font-barlow), 'Barlow Semi Condensed', sans-serif;
+}
+.label-sm { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; color: var(--tan); }
+
+/* ---------- surfaces ---------- */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.panel-dark {
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  font-family: var(--font-baloo), 'Baloo 2', cursive;
+  font-weight: 700;
+  border-radius: 13px;
+  padding: 0.7rem 1.4rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  color: var(--cream);
+  cursor: pointer;
+  transition: transform 0.16s ease, background 0.16s ease;
+  will-change: transform;
+}
+.btn:hover:not(:disabled) { transform: translateY(-3px); background: rgba(255, 255, 255, 0.18); }
+.btn:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+.btn:disabled { opacity: 0.42; cursor: not-allowed; }
+
+.btn--gold {
+  background: linear-gradient(100deg, var(--gold), var(--gold-2));
+  border: 3px solid #fff;
+  color: var(--ink);
+  font-weight: 800;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.45);
+}
+.btn--green {
+  background: linear-gradient(100deg, #37A64A, #1F7A31);
+  border: 3px solid #fff;
+  color: #fff;
+  font-weight: 800;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+}
+.btn--ghost { background: transparent; border-color: var(--line); }
+
+/* pill nhỏ (chip luật, hàng chờ...) */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  font-family: var(--font-baloo), 'Baloo 2', cursive;
+  font-weight: 700; font-size: 17px; color: #F0E0CB;
+  border: 0; cursor: pointer;
+  transition: background 0.14s ease, transform 0.14s ease;
+}
+.chip:hover { background: rgba(255, 255, 255, 0.18); }
+.chip--on { background: var(--gold); color: var(--ink); }
+
+/* công tắc luật nhà */
+.switch { width: 52px; height: 28px; border-radius: 14px; padding: 3px; display: flex; flex: none; transition: background 0.16s ease; }
+.switch--on { background: var(--c-green); justify-content: flex-end; }
+.switch--off { background: rgba(255, 255, 255, 0.18); }
+.switch i { width: 22px; height: 22px; border-radius: 50%; background: #fff; display: block; }
+
+/* ---------- HUD người chơi (neo theo toạ độ 3D qua drei <Html>) ---------- */
+.seat {
+  display: flex; align-items: center; gap: 8px;
+  user-select: none; white-space: nowrap;
+  transform: translateZ(0);
+}
+.seat__name {
+  padding: 4px 12px 5px; border-radius: 7px;
+  background: linear-gradient(90deg, var(--c-blue-2), #1B5B9C);
+  font-family: var(--font-baloo), 'Baloo 2', cursive;
+  font-weight: 700; font-size: 17px; color: #fff;
+}
+.seat--turn .seat__name { background: linear-gradient(90deg, var(--amber), #FF8A2B); color: var(--ink); }
+.seat__avatar {
+  width: 46px; height: 46px; border-radius: 9px; border: 3px solid #fff;
+  background: repeating-linear-gradient(135deg, #2B2436 0 6px, #3A3148 6px 12px);
+  display: grid; place-items: center; font-size: 22px; overflow: hidden;
+  transition: width 0.22s ease, height 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+.seat--turn .seat__avatar,
+.seat__avatar.avatar--turn {
+  border-color: var(--gold);
+  box-shadow: 0 0 10px 3px rgba(255, 211, 77, 0.9), 0 0 34px 10px rgba(255, 180, 60, 0.55);
+  animation: turnSpotlight 1.4s ease-in-out infinite;
+}
+@keyframes turnSpotlight {
+  0%, 100% { box-shadow: 0 0 10px 3px rgba(255, 211, 77, 0.9), 0 0 34px 10px rgba(255, 180, 60, 0.55); }
+  50% { box-shadow: 0 0 14px 5px rgba(255, 211, 77, 1), 0 0 46px 16px rgba(255, 180, 60, 0.75); }
+}
+.seat__count {
+  padding: 3px 9px; border-radius: 6px; background: #fff;
+  font-family: var(--font-baloo), 'Baloo 2', cursive;
+  font-weight: 800; font-size: 16px; color: #22161F;
+}
+.seat__rush { color: var(--gold); font-weight: 800; font-size: 15px; }
+
+/* ---------- animation ---------- */
+@keyframes spinSlow { to { transform: rotate(360deg); } }
+@keyframes pulseGlow { 0%, 100% { opacity: .62; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+@keyframes floatY { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+/* Hiệu ứng "đuổi nhau" cho vòng mũi tên chiều đánh quanh bàn (Table.tsx DirectionRing):
+   mỗi icon lệch animation-delay âm khác nhau -> nhìn như ánh sáng chạy vòng quanh bàn. */
+@keyframes directionChase { 0%, 100% { opacity: .65; transform: scale(.92); } 50% { opacity: 1; transform: scale(1.18); } }
+/* Bong bóng cảm xúc thả lên đầu ghế (Scene.tsx SeatHuds) — bay lên + phóng to rồi mờ dần. */
+/* Biểu tượng cấm lượt (Scene.tsx SeatHuds / GameHud.tsx) khi bị skip/skipAll. */
+@keyframes banPop {
+  0% { opacity: 0; transform: scale(0.5) rotate(-12deg); }
+  15% { opacity: 1; transform: scale(1.25) rotate(4deg); }
+  28% { transform: scale(1) rotate(0deg); }
+  78% { opacity: 1; transform: scale(1) rotate(0deg); }
+  100% { opacity: 0; transform: scale(0.92) rotate(0deg); }
+}
+@keyframes emotePop {
+  0% { opacity: 0; transform: translate(-50%, 4px) scale(0.4); }
+  15% { opacity: 1; transform: translate(-50%, -6px) scale(1.15); }
+  30% { transform: translate(-50%, -10px) scale(1); }
+  75% { opacity: 1; transform: translate(-50%, -34px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -46px) scale(0.9); }
+}
+/* Tổng số lá bị rút khi chồng stack được chốt (Cards.tsx DrawTotalPopups) — hiện to,
+   trôi lên trên đầu người bị rút rồi mờ dần. */
+@keyframes drawTotalFly {
+  0% { opacity: 0; transform: scale(0.5) translateY(6px); }
+  20% { opacity: 1; transform: scale(1.25) translateY(-4px); }
+  35% { transform: scale(1) translateY(-8px); }
+  100% { opacity: 0; transform: scale(0.85) translateY(-60px); }
+}
+/* Loé sáng ngắn khi đánh lá chức năng ra bàn (Cards.tsx PlayFlash). */
+@keyframes playFlash {
+  0% { opacity: 0; transform: scale(0.25); }
+  25% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.7); }
+}
+
+/* ---------- form ---------- */
+input[type="range"] { accent-color: var(--gold); }
+input[type="text"], select {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  padding: 0.55rem 0.9rem;
+  color: var(--cream);
+  font-family: var(--font-baloo), 'Baloo 2', cursive;
+  font-weight: 700;
+  outline: none;
+}
+input[type="text"]:focus, select:focus { border-color: var(--gold); }
+option { background: #241536; }
+
+.scroll-y { overflow-y: auto; scrollbar-width: thin; }
+
+/* Sóng xung kích khi ai đó đánh lá phạt (+2/+4/+5/Draw Color) — vòng tròn nở
+   ra từ giữa bàn rồi tan, kèm viền màn hình ửng đỏ. Đủ để giật mình một nhịp
+   mà không che bài. */
+@keyframes penaltyShock {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.15); }
+  18%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(2.6); }
+}
+@keyframes penaltyVignette {
+  0%   { opacity: 0; }
+  22%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+/* Đổi màu (Wild): cả màn hình quét một lớp màu vừa chọn rồi tan dần, để kịp
+   nhận ra màu mới kể cả khi bot chọn rất nhanh. */
+@keyframes colorWash {
+  0%   { opacity: 0; transform: scale(0.6); }
+  25%  { opacity: .85; }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+
+/* Pháo hoa ăn mừng cuối ván: mỗi đốm bay ra theo --tx/--ty rồi tắt dần. Toàn bộ
+   chuyển động nằm ở transform/opacity nên trình duyệt chạy trên GPU, không
+   layout lại — bàn 3D phía dưới vẫn mượt. */
+@keyframes fireworkSpark {
+  0%   { opacity: 0; transform: translate(0, 0) scale(0.35); }
+  12%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0.9); }
+}
+@keyframes fireworkFlash {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.2); }
+  18%  { opacity: .85; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(2.2); }
+}
+@keyframes winnerPop {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.6) rotate(-6deg); }
+  22%  { opacity: 1; transform: translate(-50%, -50%) scale(1.12) rotate(2deg); }
+  38%  { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+  82%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.05); }
+}
+
+/* ── MENU: quán cà phê buổi tối ─────────────────────────────────────────────
+   Toàn bộ chuyển động chỉ dùng transform/opacity/filter để trình duyệt chạy
+   trên GPU — menu không khởi tạo WebGL nên phải giữ nó thật rẻ. */
+
+/* Đèn thả rủ đung đưa rất nhẹ, như có người vừa đi ngang qua. */
+@keyframes lampSway {
+  0%, 100% { transform: rotate(-1.1deg); }
+  50%      { transform: rotate(1.1deg); }
+}
+/* Ánh đèn dao động khẽ, tránh cảm giác đèn LED phẳng lì. */
+@keyframes lampFlicker {
+  0%, 100% { opacity: .86; }
+  45%      { opacity: 1; }
+  70%      { opacity: .92; }
+}
+/* Hơi nóng bốc lên từ tách cà phê rồi tan. */
+@keyframes steamRise {
+  0%   { opacity: 0; transform: translateY(6px) scaleX(.8); }
+  25%  { opacity: .5; }
+  100% { opacity: 0; transform: translateY(-38px) scaleX(1.5); }
+}
+/* Đốm sáng bokeh trôi chậm phía sau — chiều sâu của quán. */
+@keyframes bokehDrift {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(14px, -18px); }
+}
+
+/* ── HỆ THỐNG NỀN (src/ui/themes.tsx) ──────────────────────────────────────
+   Tiền tố bg* để không đụng các keyframes của HUD/hiệu ứng ván đấu. Tất cả chỉ
+   động vào transform/opacity — nền chạy dưới cả menu lẫn bàn 3D nên không được
+   phép làm layout phải tính lại. */
+@keyframes bgSway      { 0%, 100% { transform: rotate(-2.2deg); } 50% { transform: rotate(2.2deg); } }
+@keyframes bgFlicker   { 0%, 100% { opacity: 1; } 42% { opacity: .96; } 46% { opacity: .62; } 49% { opacity: .98; } 72% { opacity: .72; } 75% { opacity: 1; } }
+@keyframes bgNeonBuzz  { 0%, 100% { opacity: 1; } 55% { opacity: .9; } 57% { opacity: .55; } 60% { opacity: .98; } }
+@keyframes bgSteam     { 0% { opacity: 0; transform: translateY(0) scaleX(1); } 18% { opacity: .55; } 100% { opacity: 0; transform: translateY(-120px) translateX(16px) scaleX(1.9); } }
+@keyframes bgDrift     { 0% { transform: translate(0, 0); } 100% { transform: translate(180px, -60px); } }
+@keyframes bgDriftSlow { 0% { transform: translateX(-8%); } 100% { transform: translateX(8%); } }
+@keyframes bgTwinkle   { 0%, 100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.25); } }
+@keyframes bgLeafFall  { 0% { opacity: 0; transform: translate(0, -40px) rotate(0deg); } 12% { opacity: .9; } 100% { opacity: 0; transform: translate(-160px, 520px) rotate(420deg); } }
+@keyframes bgGrassWave { 0%, 100% { transform: skewX(-3deg); } 50% { transform: skewX(3deg); } }
+
+/* ── TRANG PHÁP LÝ (/legal/*) ──────────────────────────────────────────────
+   Hai trang tĩnh, phải đọc được cả khi JavaScript hỏng và trong webview chật
+   của Discord. Không dùng lại class nào của HUD/menu để chúng không bao giờ bị
+   một thay đổi giao diện game kéo theo. */
+.legal { line-height: 1.7; font-size: 15px; }
+.legal h1 { font-family: var(--font-baloo), system-ui, sans-serif; font-size: 34px; line-height: 1.1; color: #FFE9C2; }
+.legal h2 { font-family: var(--font-baloo), system-ui, sans-serif; font-size: 21px; margin: 30px 0 8px; color: #FFD79A; }
+.legal p, .legal ul { margin: 10px 0; }
+.legal ul { padding-left: 22px; list-style: disc; }
+.legal li { margin: 6px 0; }
+.legal strong { color: #FFE9C2; }
+.legal code { font-family: ui-monospace, monospace; font-size: 13px; padding: 1px 5px; border-radius: 5px; background: rgba(255, 196, 128, .12); }
+.legal .muted { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: #8A6A52; }

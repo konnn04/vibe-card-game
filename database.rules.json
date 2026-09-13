@@ -1,0 +1,38 @@
+{
+  "rules": {
+    "rush": {
+      "rooms": {
+        "$code": {
+          "public": {
+            ".read": true,
+            ".write": false
+          },
+          "hands": {
+            "$playerId": {
+              ".read": true,
+              ".write": false
+            }
+          },
+          "internal": {
+            ".read": false,
+            ".write": false
+          },
+          "lock": {
+            ".read": false,
+            ".write": false
+          },
+          "presence": {
+            "$playerId": {
+              ".read": true,
+              ".write": true
+            }
+          }
+        }
+      },
+      "openRooms": {
+        ".read": true,
+        ".write": false
+      }
+    }
+  }
+}

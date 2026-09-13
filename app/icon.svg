@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Ú Nồ">
+  <!-- Lá bài nghiêng: nhận ra ngay ở cỡ 16px nhờ khối màu lớn, không chi tiết nhỏ. -->
+  <rect width="64" height="64" rx="14" fill="#40040A"/>
+  <g transform="rotate(-12 32 32)">
+    <rect x="17" y="10" width="30" height="44" rx="6" fill="#E23B2E" stroke="#fff" stroke-width="3.5"/>
+    <ellipse cx="32" cy="32" rx="15" ry="21" fill="#FFD34D" transform="rotate(-20 32 32)"/>
+    <text x="32" y="41" font-family="Georgia, 'Times New Roman', serif" font-size="26"
+          font-weight="bold" fill="#40040A" text-anchor="middle">Ú</text>
+  </g>
+</svg>
