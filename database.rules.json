@@ -7,6 +7,10 @@
             ".read": true,
             ".write": false
           },
+          "avatars": {
+            ".read": true,
+            ".write": false
+          },
           "hands": {
             "$playerId": {
               ".read": true,

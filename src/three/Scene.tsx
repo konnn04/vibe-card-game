@@ -11,7 +11,9 @@ import { DirectionRing, Lights, Sparkles, TableTop } from './Table';
 import { seatIndex, seatPos } from './layout';
 import { gfxOf, useSettings } from '@/src/lib/settings';
 import { useMatch } from '@/src/state/match';
-import { useActiveTheme } from '@/src/state/room';
+import { useActiveTheme, useAvatarLookup, useRoom } from '@/src/state/room';
+import { serverNow } from '@/src/state/clock';
+import { isTakenOver } from '@/src/lib/takeover';
 import { themeMeta } from '@/src/lib/themes';
 import { Backdrop } from '@/src/ui/Backdrop';
 import { Avatar } from '@/src/ui/Avatar';
@@ -93,9 +95,16 @@ function FpsGovernor({ hasBloom }: { hasBloom: boolean }) {
 
 /** HUD người chơi: DOM 2D neo theo toạ độ 3D của ghế (drei Html), không tự tính 3D. */
 function SeatHuds() {
+  const t = useTranslations('game');
   const state = useMatch((s) => s.state);
   const myId = useMatch((s) => s.myId);
   const fx = useMatch((s) => s.fx);
+  // Avatar lấy từ bản ghi phòng — ván đấu không mang theo (xem useAvatarLookup).
+  const avatarOf = useAvatarLookup();
+  // Tình trạng mạng của từng người: ai rớt thì phải NHÌN RA NGAY, vì lượt của
+  // người mất kết nối là lúc cả bàn ngồi chờ đồng hồ chạy hết mà không hiểu vì sao.
+  const presence = useRoom((st) => st.presence);
+  const online = useRoom((st) => st.mode === 'online');
   if (!state || state.phase === 'roundEnd' || state.phase === 'matchEnd') return null;
   const n = state.players.length;
   const mySeat = state.players.findIndex((p) => p.id === myId);
@@ -159,8 +168,45 @@ function SeatHuds() {
                   <Ban size={40} strokeWidth={3} color="#fff" style={{ filter: 'drop-shadow(0 0 6px rgba(226,59,46,.9)) drop-shadow(0 2px 4px rgba(0,0,0,.7))' }} />
                 </div>
               )}
-              <div className="seat__name">{p.name}</div>
-              <Avatar name={p.name} preset={i} size={active ? 60 : 46} className="seat__avatar" />
+              <div className="seat__name">
+                {online && (() => {
+                  const pr = presence[p.id];
+                  // Ghế đang bị máy giữ hộ: hiện HẲN nhãn thay vì một chấm đỏ.
+                  // Cả bàn cần biết ngay là "người này rớt, máy đang đánh thay"
+                  // chứ không phải "người này chơi dở" hay "game đơ".
+                  if (isTakenOver(p)) {
+                    return (
+                      <span
+                        className="mr-1.5 rounded px-1 align-middle text-[10px] font-bold"
+                        style={{ background: 'rgba(226,72,59,.9)', color: '#fff' }}
+                        title={t('aiTookOver', { name: p.name })}
+                      >
+                        AI
+                      </span>
+                    );
+                  }
+                  // Bot thật thì không có mạng để mà rớt.
+                  if (p.isBot) return null;
+                  const stale = !!pr && pr.ts > 0 && serverNow() - pr.ts > 15000;
+                  const bad = !pr?.online || stale;
+                  const color = bad ? '#E2483B' : pr.ping == null ? '#8A8A8A' : pr.ping < 150 ? '#4ED16B' : pr.ping < 400 ? '#F0B62E' : '#E2483B';
+                  return (
+                    <span
+                      title={bad ? 'offline' : pr.ping != null ? `${pr.ping}ms` : ''}
+                      className="mr-1.5 inline-block rounded-full align-middle"
+                      style={{ width: 7, height: 7, background: color, boxShadow: `0 0 5px ${color}` }}
+                    />
+                  );
+                })()}
+                {p.name}
+              </div>
+              <Avatar
+                name={p.name}
+                preset={avatarOf(p.id).preset}
+                avatarUrl={avatarOf(p.id).url}
+                size={active ? 60 : 46}
+                className="seat__avatar"
+              />
               <div className="seat__count">{p.hand.length}</div>
               {p.hand.length === 1 && <div className="seat__rush">{p.calledRush ? 'RUSH!' : '?'}</div>}
             </div>

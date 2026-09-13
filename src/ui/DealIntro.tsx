@@ -2,7 +2,7 @@
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useRoom } from '@/src/state/room';
+import { useAvatarLookup, useRoom } from '@/src/state/room';
 import { playSfx } from '@/src/lib/audio';
 import { Avatar } from './Avatar';
 import { UI } from '@/src/config';
@@ -13,7 +13,8 @@ const COUNTDOWN_SECONDS = 5;
 /** Intro trước khi chia bài: tên phòng + luật đang bật + avatar bay vào ghế + đếm ngược. */
 export function DealIntro({ onDone }: { onDone: () => void }) {
   const tr = useTranslations('rules');
-  const { code, seats, rules, deckType } = useRoom();
+  const { code, seats, rules, deckType, meId } = useRoom();
+  const avatarOf = useAvatarLookup();
   const [count, setCount] = useState(COUNTDOWN_SECONDS);
 
   useEffect(() => {
@@ -74,7 +75,7 @@ export function DealIntro({ onDone }: { onDone: () => void }) {
             animate={{ y: 0, opacity: 1, scale: 1 }}
             transition={{ delay: 0.12 * i, type: 'spring', stiffness: 260, damping: 20 }}
           >
-            <Avatar name={s!.name} preset={s!.avatarPreset} size={56} avatarUrl={s!.avatarUrl} useStored={!s!.isBot} className="seat__avatar !h-14 !w-14" />
+            <Avatar name={s!.name} preset={s!.avatarPreset} size={56} avatarUrl={avatarOf(s!.id).url} self={s!.id === meId} className="seat__avatar !h-14 !w-14" />
             <span className="display text-[16px] text-[#FFF3DA]">{s!.name}</span>
           </motion.div>
         ))}

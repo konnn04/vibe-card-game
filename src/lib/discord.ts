@@ -1,6 +1,6 @@
 'use client';
 
-import { DiscordSDK, patchUrlMappings } from '@discord/embedded-app-sdk';
+import { DiscordSDK } from '@discord/embedded-app-sdk';
 
 /**
  * Discord Activity chạy trong iframe và truyền tham số qua query string
@@ -47,7 +47,14 @@ export function getDiscordSdk(): DiscordSDK | null {
   if (typeof window === 'undefined' || !isDiscordActivity()) return null;
   setupDiscordUrlMappings();
   if (!discordSdkInstance) {
-    const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || '1548513676217028698';
+    // Không có giá trị mặc định: xem chú thích ở app/api/discord/token/route.ts.
+    // Thiếu env thì thà không khởi tạo SDK (game vẫn chạy, chỉ là không lấy được
+    // tên/ảnh Discord) còn hơn nói chuyện với nhầm application.
+    const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
+    if (!clientId) {
+      console.warn('[Discord SDK] thiếu NEXT_PUBLIC_DISCORD_CLIENT_ID lúc build — bỏ qua tích hợp Discord.');
+      return null;
+    }
     discordSdkInstance = new DiscordSDK(clientId, { disableConsoleLogOverride: true });
   }
   return discordSdkInstance;

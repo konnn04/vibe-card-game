@@ -2,10 +2,12 @@
 import { create } from 'zustand';
 import { DEFAULT_RULES, type DeckType, type Rules } from '@u-no/game-engine';
 import { BOT_NAMES, roomCode } from '@/src/lib/names';
-import { api, loadToken, playerId, type NetRoom, type NetSeat } from './net';
+import { api, loadToken, playerId, type NetRoom, type NetSeat, type PresenceMap } from './net';
 import { isBgTheme, type BgTheme } from '@/src/lib/themes';
+import { setLivePresence, useMatch } from './match';
 import { pickRotation } from '@/src/lib/rotation';
 import { useSettings } from '@/src/lib/settings';
+import { useMemo } from 'react';
 
 export interface Seat {
   id: string;
@@ -13,6 +15,8 @@ export interface Seat {
   isBot: boolean;
   avatarPreset: number;
   avatarUrl?: string | null;
+  /** Ở hàng chờ nhưng chỉ muốn xem — không bị xoay vào ghế ván sau. */
+  watchOnly?: boolean;
   /** số ván liên tục đã chơi — dùng để xoay vòng hàng chờ (FIFO) */
   consecutiveRounds: number;
 }
@@ -39,10 +43,16 @@ interface RoomStore {
    * của người đang ở hàng chờ.
    */
   scores: Record<string, number>;
+  /** Ai đang online và trễ bao nhiêu — do Firebase đẩy về (xem net.ts armPresence). */
+  presence: PresenceMap;
+  /** Ảnh tự tải lên của từng người, bản tạm dùng chung trong phòng. */
+  avatars: Record<string, string>;
   createRoom(me: Seat, opts?: { rules?: Partial<Rules>; deckType?: DeckType; bots?: number }): void;
   quickMatch(me: Seat): void;
   attachOnline(room: NetRoom): void;
   applyRemote(room: NetRoom): void;
+  applyPresence(map: PresenceMap): void;
+  applyAvatars(map: Record<string, string>): void;
   setRules(patch: Partial<Rules>): void;
   setDeck(d: DeckType): void;
   moveSeat(from: number, to: number): void;
@@ -50,6 +60,8 @@ interface RoomStore {
   seatFromQueue(qIndex: number, seatIndex: number): void;
   addBot(): void;
   kick(id: string): void;
+  /** Đổi giữa "chờ tới lượt vào ghế" và "chỉ xem" — dùng được cả khi đang chơi. */
+  setWatchMode(watchOnly: boolean): void;
   rotateAfterRound(consecutive: Record<string, number>, protectedId: string): { out: Seat; in: Seat } | null;
   reset(): void;
 }
@@ -64,15 +76,19 @@ export function makeBot(): Seat {
   };
 }
 
-const toSeat = (p: { id: string; name: string; isBot: boolean; avatarPreset: number; avatarUrl?: string | null } | null): Seat | null =>
+const toSeat = (p: { id: string; name: string; isBot: boolean; avatarPreset: number; avatarUrl?: string | null; watchOnly?: boolean } | null): Seat | null =>
   p ? { ...p, consecutiveRounds: 0 } : null;
 
 /** Ở chế độ online mọi thay đổi phải qua server; helper này gọi API rồi chờ broadcast. */
 function remote(get: () => RoomStore, fn: (code: string, id: string, token: string) => Promise<unknown>) {
   const { code, meId } = get();
   if (!code) return;
-  void fn(code, meId, loadToken(code)).catch(() => {
-    /* server từ chối (không phải host, ván đã bắt đầu...) -> state cũ vẫn đúng */
+  void fn(code, meId, loadToken(code)).catch((e: Error) => {
+    // State cũ vẫn đúng (server là bản chính thức), nhưng KHÔNG được nuốt lý do.
+    // Trước đây chỗ này im lặng hoàn toàn: bấm 'Thêm bot' mà không có gì xảy ra,
+    // console hiện 400 trần trụi, còn người chơi thì chịu không đoán nổi là
+    // 'ván đã bắt đầu' hay 'không phải chủ phòng' hay 'vé phòng hỏng'.
+    useMatch.getState().setToast(e.message || 'room-failed');
   });
 }
 
@@ -85,8 +101,10 @@ export const useRoom = create<RoomStore>((set, get) => ({
   rules: { ...DEFAULT_RULES },
   seats: [null, null, null, null],
   queue: [],
-  bgTheme: null,
+ bgTheme: null,
   scores: {},
+  presence: {},
+  avatars: {},
 
   /** Phòng cục bộ (chơi với bot, không cần mạng). */
   createRoom(me, opts) {
@@ -113,6 +131,16 @@ export const useRoom = create<RoomStore>((set, get) => ({
   attachOnline(room) {
     set({ mode: 'online', meId: playerId() });
     get().applyRemote(room);
+  },
+
+  applyPresence(map) {
+    set({ presence: map });
+    // Nhịp gõ ván đấu bỏ qua người đã rớt, nên nó cần biết ngay ai còn sống.
+    setLivePresence(map);
+  },
+
+  applyAvatars(map) {
+    set({ avatars: map });
   },
 
   applyRemote(room) {
@@ -186,6 +214,11 @@ export const useRoom = create<RoomStore>((set, get) => ({
     else set({ queue: [...get().queue, bot] });
   },
 
+  setWatchMode(watchOnly) {
+    if (get().mode === 'online') return remote(get, (c, i, t) => api.seats(c, i, t, { op: 'watchMode', watchOnly }));
+    set({ queue: get().queue.map((q) => (q.id === get().meId ? { ...q, watchOnly } : q)) });
+  },
+
   kick(id) {
     if (get().mode === 'online') return remote(get, (c, i, t) => api.seats(c, i, t, { op: 'kick', targetId: id }));
     set({
@@ -211,7 +244,7 @@ export const useRoom = create<RoomStore>((set, get) => ({
 
   reset: () =>
     set({
-      mode: 'local', code: '', hostId: '', meId: 'me', bgTheme: null, scores: {},
+      mode: 'local', code: '', hostId: '', meId: 'me', bgTheme: null, scores: {}, presence: {}, avatars: {},
       seats: [null, null, null, null], queue: [], rules: { ...DEFAULT_RULES }, deckType: 'classic',
     }),
 }));
@@ -227,4 +260,30 @@ export function useActiveTheme(): BgTheme {
   const shared = useRoom((s) => (s.mode === 'online' ? s.bgTheme : null));
   const mine = useSettings((s) => s.bgTheme);
   return shared ?? mine;
+}
+
+/**
+ * TRA AVATAR THEO ID NGƯỜI CHƠI.
+ *
+ * GameState KHÔNG mang avatar (engine cố tình không biết gì về hiển thị), nên
+ * mọi HUD trong ván trước đây đành lấy đại CHỈ SỐ GHẾ làm preset — ai cũng ra
+ * một mặt cười không liên quan, và ảnh Discord thì không bao giờ tới được bàn
+ * chơi. Bản ghi phòng mới là chỗ có avatar thật, kể cả người đang ở hàng chờ.
+ *
+ * Trả về một hàm tra (không phải object mới mỗi lần render) để gọi được trong
+ * vòng lặp map — hook thì không.
+ */
+export function useAvatarLookup(): (id: string) => { preset: number; url: string | null } {
+  const seats = useRoom((s) => s.seats);
+  const queue = useRoom((s) => s.queue);
+  const avatars = useRoom((s) => s.avatars);
+  return useMemo(() => {
+    const map = new Map<string, { preset: number; url: string | null }>();
+    for (const p of [...seats, ...queue]) {
+      if (!p) continue;
+      // Ảnh tự tải lên thắng ảnh Discord: đó là thứ người chơi CHỦ ĐỘNG chọn.
+      map.set(p.id, { preset: p.avatarPreset ?? 0, url: avatars[p.id] ?? p.avatarUrl ?? null });
+    }
+    return (id: string) => map.get(id) ?? { preset: 0, url: null };
+  }, [seats, queue, avatars]);
 }

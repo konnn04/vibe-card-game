@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { markOpen, mutate, newToken, seatOrQueue, type RoomPlayer } from '@/src/server/room';
+import { markOpen, mutate, newToken, sanitizeAvatarUrl, seatOrQueue, type RoomPlayer } from '@/src/server/room';
 import { fail, json, readBody, snapshotFor } from '@/src/server/http';
 
 interface Body { player: RoomPlayer }
@@ -15,6 +15,11 @@ export async function POST(req: NextRequest, ctx: RouteContext<'/api/rooms/[code
     name: String(body.player.name).slice(0, 16),
     isBot: false,
     avatarPreset: body.player.avatarPreset ?? 0,
+    // avatarUrl PHẢI được chép sang: nó là thứ duy nhất cho người khác thấy
+    // mặt mình. Trước đây ba route này dựng lại RoomPlayer từng field và bỏ quên
+    // nó, nên client gửi lên rồi server vứt ngay ở cửa — cả bàn vĩnh viễn chỉ
+    // thấy avatar mặc định, dù Discord đã trả ảnh thật về.
+    avatarUrl: sanitizeAvatarUrl(body.player.avatarUrl),
   };
 
   try {

@@ -66,6 +66,8 @@ interface MatchStore {
   /** Giữ hàng đợi lại (màn đếm ngược trước ván) — xem queueHeld. */
   holdQueue(): void;
   releaseQueue(): void;
+  /** Báo lỗi ra HUD — dùng chung cho cả thao tác phòng chờ (xem room.ts). */
+  setToast(msg: string): void;
   clearToast(): void;
   dropFx(id: number): void;
   stop(): void;
@@ -189,6 +191,111 @@ function sfxSigOf(e: GameEvent): string {
  * toast đỏ chỉ làm người chơi tưởng game hỏng.
  */
 const QUIET_REJECTS = new Set(['round-not-ended', 'not-host']);
+
+/**
+ * ĐẨY VÁN Ở PHÒNG ONLINE — HẸN ĐÚNG LÚC, KHÔNG DÒ LIÊN TỤC.
+ *
+ * Server có sẵn vòng tự đẩy ván bằng setTimeout, nhưng trên nền serverless tiến
+ * trình bị đóng băng ngay sau khi trả response nên cái hẹn giờ đó không bao giờ
+ * nổ. Client phải gõ nhịp hộ.
+ *
+ * Bản đầu tôi làm bằng setInterval 500ms rồi mỗi nhịp hỏi "có việc gì tới hạn
+ * chưa?". Chạy thì đúng, nhưng đó là DÒ: lượt của bot dài 650ms thì hỏi 2 lần,
+ * cửa sổ hô Ú Nồ thì hỏi cả chục lần, mà đa số lần hỏi chẳng để làm gì.
+ *
+ * Không cần dò, vì client BIẾT TRƯỚC mốc tới hạn: turnHoldUntil, turnDeadline,
+ * hạn hô. Nên chỉ cần MỘT hẹn giờ đặt đúng vào mốc đó. Mỗi việc tới hạn tốn
+ * đúng một request thay vì hai tới mười.
+ *
+ * State đổi (mình đánh bài, hoặc server dội về) thì mốc cũ hết nghĩa -> đặt lại
+ * lịch. planStep() được gọi ở cuối pump() và trong applyRemote().
+ */
+let stepTimer: ReturnType<typeof setTimeout> | null = null;
+/** Khoảng cách giữa hai khe tiếp quản. */
+const STEP_SLOT_MS = 900;
+/** Khe cho người đang ở hàng chờ — chỉ cứu khi cả bàn im. */
+const STEP_SPECTATOR_SLOT = 6;
+/** Chặn chính mình gửi dồn khi server chậm trả lời. */
+const STEP_MIN_GAP_MS = 400;
+let lastStepAt = 0;
+
+/**
+ * Tình trạng mạng cả phòng, do room.ts đẩy sang.
+ *
+ * KHÔNG import useRoom ở đây: room.ts đã import match.ts (để báo lỗi ra toast),
+ * import ngược lại là thành vòng tròn. Một biến phẳng cộng một hàm set là đủ,
+ * và cũng rẻ hơn một subscription.
+ */
+let livePresence: Record<string, { online: boolean; ts: number }> = {};
+export function setLivePresence(map: Record<string, { online: boolean; ts: number }>) {
+  livePresence = map;
+  // Người đang giữ khe trước mình vừa rớt -> khe của mình xê lên, phải tính lại.
+  planStep();
+}
+
+/** Coi như mất kết nối nếu nhịp tim im quá lâu (nhịp là 5s — xem net.ts). */
+const PRESENCE_STALE_MS = 15000;
+
+function alive(id: string): boolean {
+  const p = livePresence[id];
+  // Chưa có bản ghi = vừa vào phòng, chưa kịp đập nhịp nào. Coi là còn sống,
+  // không thì người mới vào luôn bị nhảy khe.
+  if (!p) return true;
+  return p.online && Date.now() - p.ts < PRESENCE_STALE_MS;
+}
+
+function stopStepLoop() {
+  if (stepTimer) clearTimeout(stepTimer);
+  stepTimer = null;
+}
+
+/**
+ * Đặt lịch cho lần gõ nhịp kế tiếp, hoặc không đặt gì nếu chẳng có việc gì.
+ */
+function planStep() {
+  stopStepLoop();
+  const { mode, code, myId, hostId } = useMatch.getState();
+  if (mode !== 'online' || !code) return;
+  const s = frames.length ? frames[frames.length - 1].state : useMatch.getState().state;
+  if (!s || s.phase === 'roundEnd' || s.phase === 'matchEnd') return;
+
+  const actorId = s.resume?.playerId ?? s.players[s.turn]?.id;
+  const actor = s.players.find((p) => p.id === actorId);
+
+  // Mốc SỚM NHẤT trong các việc đang chờ. turnDeadline luôn có mặt, nên lúc nào
+  // cũng có một lần thức dậy được hẹn — kể cả khi bàn đang yên.
+  const dueAts: number[] = [s.turnDeadline];
+  if (s.drawRun) dueAts.push(s.turnHoldUntil);
+  if (actor?.isBot) dueAts.push(s.turnHoldUntil);
+  if (s.rushWindow && s.players.some((p) => p.isBot)) dueAts.push(s.rushWindow.openedAt + RUSH_GRACE_MS);
+  const dueAt = Math.min(...dueAts);
+
+  // Khe của mình: chủ phòng 0, rồi theo thứ tự ghế, người xem cuối cùng. Ai
+  // đang mất kết nối thì BỊ BỎ QUA hẳn thay vì phải chờ hết khe của họ — đó là
+  // toàn bộ ý nghĩa của việc chuyển vai khi có người rớt.
+  const order = [
+    ...(alive(hostId) ? [hostId] : []),
+    ...s.players.filter((p) => !p.isBot && p.id !== hostId && alive(p.id)).map((p) => p.id),
+  ];
+  const mine = order.indexOf(myId);
+  const rank = mine >= 0 ? mine : STEP_SPECTATOR_SLOT;
+
+  const wait = Math.max(0, dueAt - serverNow()) + rank * STEP_SLOT_MS;
+  stepTimer = setTimeout(() => {
+    stepTimer = null;
+    fireStep();
+    // Chưa xong thì tự hẹn lại; xong rồi thì state đổi và applyRemote sẽ hẹn mới.
+    planStep();
+  }, Math.max(wait, 0));
+}
+
+function fireStep() {
+  const { mode, code, myId } = useMatch.getState();
+  if (mode !== 'online' || !code) return;
+  if (Date.now() - lastStepAt < STEP_MIN_GAP_MS) return;
+  lastStepAt = Date.now();
+  void api.step(code, myId, loadToken(code)).catch(() => {});
+}
 
 let botTimers: ReturnType<typeof setTimeout>[] = [];
 let tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -343,6 +450,7 @@ export const useMatch = create<MatchStore>((set, get) => ({
   start({ players, rules, deckType, myId, seed }) {
     setLocalClock();
     queueHeld = false;
+    stopStepLoop();
     clearTimers();
     const { state, events } = createGame({
       seed: seed ?? Math.floor(Math.random() * 2 ** 31),
@@ -364,6 +472,8 @@ export const useMatch = create<MatchStore>((set, get) => ({
     clearTimers();
     stopLoop();
     set({ mode: 'online', code, hostId, myId: playerId() });
+    stopStepLoop();
+    planStep();
   },
 
   applyRemote({ room, game, events }: RoomUpdate) {
@@ -475,11 +585,13 @@ export const useMatch = create<MatchStore>((set, get) => ({
     pump(get, set);
   },
 
+  setToast: (msg) => set({ toast: msg }),
   clearToast: () => set({ toast: null }),
   dropFx: (id) => set({ fx: get().fx.filter((f) => f.id !== id) }),
 
   stop() {
     queueHeld = false;
+    stopStepLoop();
     clearFrames();
     clearTimers();
     stopLoop();
@@ -580,6 +692,8 @@ function pump(get: Getter, set: Setter) {
   // Hàng đợi cạn -> TURN_ACTION: đồng hồ chạy, mở khoá thao tác, bot được đi.
   if (get().animating) set({ animating: false, phase: 'action', version: get().version + 1 });
   scheduleLocalBots(get);
+  // State vừa đổi -> mốc tới hạn cũ hết nghĩa, đặt lại lịch gõ nhịp.
+  planStep();
 }
 
 /**
@@ -619,6 +733,16 @@ function waitForFrame(get: Getter, set: Setter, budget: number) {
  */
 function scheduleLocalBots(get: Getter) {
   clearTimers();
+  /**
+   * CHỈ chế độ chơi với máy. Ở phòng online, BOT DO SERVER ĐIỀU KHIỂN
+   * (runRoomStep) — engine chạy ở đó mới là bản chính thức.
+   *
+   * Thiếu dòng này thì MỌI client đều tự tính nước đi cho bot rồi bắn lên
+   * /api/.../action: server từ chối gần hết (400 not-your-turn) nên nhìn bề
+   * ngoài vẫn chạy, nhưng thực chất mỗi lượt bot là một tràng request rác, và
+   * bot online thực ra đang được máy CHỦ PHÒNG điều khiển chứ không phải server.
+   */
+  if (get().mode !== 'local') return;
   // ĐANG PHÁT ANIMATION -> không ai được hành động. pump() sẽ gọi lại hàm này
   // ngay khi hàng đợi cạn. Đây là chỗ duy nhất chặn "bot đánh đè lên animation",
   // thay cho việc so mốc thời gian turnHoldUntil (vốn lệch đồng hồ là hỏng).

@@ -7,7 +7,8 @@ type Op =
   | { op: 'toQueue'; index: number }
   | { op: 'seatFromQueue'; queueIndex: number; seatIndex: number }
   | { op: 'addBot' }
-  | { op: 'kick'; targetId: string };
+  | { op: 'kick'; targetId: string }
+  | { op: 'watchMode'; watchOnly: boolean };
 
 const BOT_NAMES = ['Dusty', 'Pudding', 'Luna', 'Mochi', 'Pixel', 'Cocoa'];
 
@@ -23,8 +24,20 @@ export async function POST(req: NextRequest, ctx: RouteContext<'/api/rooms/[code
   try {
     const room = await mutate(upper, async (r) => {
       if (!verify(r, playerId, token)) throw new Error('unauthorized');
-      if (r.status !== 'lobby') throw new Error('match-running');
       const host = isHost(r, playerId);
+
+      // CHỈ XEM / SẴN SÀNG CHƠI — thao tác DUY NHẤT được phép giữa ván, và cả
+      // điểm hay của nó nằm ở đó: đang ngồi xem thấy vui thì bấm một cái là ván
+      // sau có ghế, không phải chờ hết trận mới đổi ý được. Chỉ đổi được cho
+      // CHÍNH MÌNH, kể cả chủ phòng.
+      if (body.op === 'watchMode') {
+        const me = r.queue.find((q) => q.id === playerId);
+        if (!me) throw new Error('not-in-queue');
+        me.watchOnly = !!body.watchOnly;
+        return;
+      }
+
+      if (r.status !== 'lobby') throw new Error('match-running');
 
       switch (body.op) {
         case 'move': {

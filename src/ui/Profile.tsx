@@ -28,7 +28,7 @@ export function Profile({ onClose }: { onClose: () => void }) {
           style={{ background: 'repeating-linear-gradient(135deg,#241C33 0 10px,#2E2440 10px 20px)' }}
         >
           <div className="rounded-full p-[3px]" style={{ border: '3px solid #FFD34D' }}>
-            <Avatar name={name} preset={avatarPreset} size={132} useStored className="seat__avatar !h-[132px] !w-[132px] !rounded-full !border-0" />
+            <Avatar name={name} preset={avatarPreset} size={132} self className="seat__avatar !h-[132px] !w-[132px] !rounded-full !border-0" />
           </div>
         </div>
 

@@ -27,7 +27,7 @@ export async function POST(req: NextRequest, ctx: RouteContext<'/api/rooms/[code
       if (action.type === 'NEXT_ROUND') {
         if (!isHost(r, playerId)) throw new Error('not-host');
         if (r.game.phase !== 'roundEnd') throw new Error('round-not-ended');
-        return { events: rotateAndDeal(r) };
+        return { events: await rotateAndDeal(r) };
       }
 
       const actor = r.game.players.find((p) => p.id === action.playerId);

@@ -267,7 +267,7 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
             name={username}
             preset={avatarPreset}
             size={scale < 0.8 ? 44 : 54}
-            useStored
+            self
             className="!rounded-full overflow-hidden"
           />
           <span>

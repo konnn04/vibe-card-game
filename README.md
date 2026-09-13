@@ -41,7 +41,7 @@ detection line is identical in both.
 | How it opens | Any browser, your own URL | The activity shelf in a voice channel |
 | Detection | default | `frame_id` / `instance_id` in the query string **and** running inside an iframe (`src/lib/discord.ts`) |
 | Finding each other | Share a `?room=CODE` link, or type the 6-character code | A default room code is derived from the voice channel's `instance_id`, so everyone who launches it lands in the same room |
-| Identity | Name and avatar from local settings | Same — the app never requests OAuth and never reads your Discord profile. The only Discord value it touches is the voice channel `instance_id`, and only to derive a room code from it |
+| Identity | Name and avatar from local settings | Your Discord display name and avatar, via OAuth `identify` (`src/lib/discord.ts` → `/api/discord/token`). The voice channel `instance_id` also becomes the default room code |
 | Refresh / reconnect | Reopen the same link; the seat token in `localStorage` puts you back in your chair | Same |
 
 Nothing about the rules, networking, rendering or audio differs between the two.
@@ -256,9 +256,59 @@ row only keeps the newest run.
 One build serves both targets. Deploy once, then optionally point Discord at the
 same URL.
 
+### With Docker (own host)
+
+```bash
+cp .env.example .env          # fill in real values
+GIT_SHA=$(git rev-parse --short=7 HEAD) GIT_COUNT=$(git rev-list --count HEAD) docker compose up -d --build
+```
+
+Multi-stage build on `output: 'standalone'` — the runtime image carries a ~29MB
+server plus `public/` and no `node_modules`. It listens on `127.0.0.1:3000`; put
+your own reverse proxy in front for TLS (a Discord Activity requires HTTPS).
+
+Two things that will bite you if you edit `docker-compose.yml`:
+
+- **`NEXT_PUBLIC_*` must stay under `build.args`, not `environment`.** Those
+  values are inlined into the browser bundle at build time. Declared under
+  `environment` they arrive far too late, the bundle ships empty strings, and
+  online play silently does nothing — while the menu still loads, so it reads
+  as an unrelated bug.
+- **Keep it at one replica.** Room step timers, fallback locks and caches are
+  per-process in-memory state. Two replicas each schedule their own timers for
+  the same room: not corrupting (Firebase holds the lock) but duplicated work
+  and much harder to debug. Scaling out means moving the timers out of process
+  first.
+
+### On Vercel
+
+Works out of the box, with **one setting that matters more than everything else
+put together**: `vercel.json` pins functions to `sin1`, next to the Firebase
+Realtime Database in `asia-southeast1`.
+
+A single player action makes five database round trips — take the lock, read the
+room, write the room, broadcast, release the lock. From Vercel's default `iad1`
+those cross the Pacific at ~220ms each: **~1.1s per move**, with the room lock
+held the whole time, while `withLock` only retries for ~1.2s before throwing
+`room-busy`. Two people acting close together collide immediately. From `sin1`
+the same five trips cost ~60ms.
+
+**Change that region if the database moves.** Pick the Vercel region nearest the
+*database*, not the players — players only fetch static assets, which the CDN
+already handles, but every move has to reach the database.
+
+Two more Vercel specifics:
+
+- `FIREBASE_SERVICE_ACCOUNT_KEY` must be **raw JSON or base64**, not a file
+  path. There is no filesystem to mount a key into.
+- The server's own `setTimeout` room stepper is disabled on serverless (it can
+  never fire once the response is sent). The match is driven entirely by the
+  client heartbeat at `/api/rooms/[code]/step` — see
+  [How it works](#how-it-works).
+
 ### As a website
 
-Any Node host that runs `next build` / `next start` works, as does Vercel.
+Any Node host that runs `next build` / `next start` works.
 Set `NEXT_PUBLIC_SITE_URL` so share links, `sitemap.xml` and the Open Graph
 preview point at the real domain instead of `localhost`.
 

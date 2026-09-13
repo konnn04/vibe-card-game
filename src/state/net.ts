@@ -23,6 +23,16 @@ export interface NetRoom {
 }
 export interface RoomUpdate { room: NetRoom; game: GameState | null; events: GameEvent[] }
 
+/** Tình trạng mạng của một người trong phòng. */
+export interface Presence {
+  online: boolean;
+  /** Mốc nhịp tim gần nhất (đồng hồ SERVER). */
+  ts: number;
+  /** Độ trễ khứ hồi tới database, mili-giây. null = chưa đo được. */
+  ping: number | null;
+}
+export type PresenceMap = Record<string, Presence>;
+
 export const realtimeEnabled = hasFirebaseClient;
 
 /* ------------------------------------------------------------- identity */
@@ -86,6 +96,15 @@ export const api = {
   start: (code: string, id: string, token: string, bgTheme?: BgTheme) =>
     post<{ ok: boolean }>(`/api/rooms/${code}/start`, { playerId: id, token, bgTheme }),
 
+  // Gõ nhịp cho server đẩy ván (bot đi / hết giờ / rút tiếp). KHÔNG mang hành
+  // động nào — xem app/api/rooms/[code]/step/route.ts.
+  // Ảnh đại diện tạm dùng chung trong phòng. image = null nghĩa là xoá.
+  avatar: (code: string, id: string, token: string, image: string | null) =>
+    post<{ ok: boolean }>(`/api/rooms/${code}/avatar`, { playerId: id, token, image }),
+
+  step: (code: string, id: string, token: string) =>
+    post<{ ok: boolean }>(`/api/rooms/${code}/step`, { playerId: id, token }),
+
   action: (code: string, id: string, token: string, action: Action) =>
     post<{ ok: boolean; rejected?: string }>(`/api/rooms/${code}/action`, { playerId: id, token, action }),
 
@@ -105,6 +124,10 @@ let conn: Connection | null = null;
 export interface Handlers {
   onRoom(update: RoomUpdate): void;
   onHand(cards: Card[]): void;
+  /** Ai đang online, trễ bao nhiêu — xem armPresence(). */
+  onPresence(map: PresenceMap): void;
+  /** Ảnh đại diện tạm của cả phòng, theo id người chơi. */
+  onAvatars(map: Record<string, string>): void;
   /** mất/khôi phục kết nối -> gọi lại snapshot cho chắc, không tin state cũ */
   onResync(): void;
 }
@@ -120,8 +143,36 @@ export interface Handlers {
 function armPresence(db: ReturnType<typeof getFirebaseClientDb>, code: string, id: string) {
   if (!db) return;
   const presenceRef = ref(db, `rush/rooms/${code}/presence/${id}`);
-  void onDisconnect(presenceRef).set({ online: false, ts: serverTimestamp() });
-  void fbSet(presenceRef, { online: true, ts: serverTimestamp() });
+  void onDisconnect(presenceRef).set({ online: false, ts: serverTimestamp(), ping: null });
+  void beat(db, code, id);
+}
+
+/**
+ * NHỊP TIM + ĐO ĐỘ TRỄ.
+ *
+ * Ping ở đây là thời gian khứ hồi của một lần GHI vào database rồi được server
+ * xác nhận — đúng con đường mà mọi nước đi phải đi qua, nên nó là con số có
+ * nghĩa với người chơi, không phải một cú ping ICMP cho đẹp.
+ *
+ * Giá trị gửi đi là của nhịp TRƯỚC: phải ghi xong mới biết lần ghi đó mất bao
+ * lâu, mà lúc đó thì đã ghi rồi. Trễ một nhịp (5s) không ảnh hưởng gì.
+ */
+let lastPing: number | null = null;
+let beatTimer: ReturnType<typeof setInterval> | null = null;
+const BEAT_MS = 5000;
+
+async function beat(db: NonNullable<ReturnType<typeof getFirebaseClientDb>>, code: string, id: string) {
+  const t0 = Date.now();
+  try {
+    await fbSet(ref(db, `rush/rooms/${code}/presence/${id}`), {
+      online: true,
+      ts: serverTimestamp(),
+      ping: lastPing,
+    });
+    lastPing = Date.now() - t0;
+  } catch {
+    lastPing = null;
+  }
 }
 
 /**
@@ -177,6 +228,42 @@ export function connect(code: string, handlers: Handlers): boolean {
   );
   unsubs.push(unsubHand);
 
+  // 2b. Tình trạng mạng của cả phòng + nhịp tim của chính mình.
+  const presenceRef = ref(db, `rush/rooms/${code}/presence`);
+  const unsubPresence = onValue(presenceRef, (snap) => {
+    const raw = (snap.val() ?? {}) as Record<string, Partial<Presence>>;
+    const map: PresenceMap = {};
+    for (const [pid, v] of Object.entries(raw)) {
+      map[pid] = {
+        online: !!v?.online,
+        ts: typeof v?.ts === 'number' ? v.ts : 0,
+        ping: typeof v?.ping === 'number' ? v.ping : null,
+      };
+    }
+    handlers.onPresence(map);
+  }, (error) => {
+    // KHÔNG nuốt: thiếu luật trong database.rules.json thì Firebase từ chối đọc,
+    // mà không có chỗ nào báo thì nhìn y hệt "tính năng không chạy".
+    console.warn('[Firebase] presence sync warning:', error);
+  });
+  unsubs.push(unsubPresence);
+
+  // 2c. Ảnh đại diện tạm — nhánh RIÊNG, đọc một lần rồi chỉ đổi khi có người
+  // vào/ra, không đi kèm mỗi nước đi như bản ghi phòng.
+  const avatarsRef = ref(db, `rush/rooms/${code}/avatars`);
+  const unsubAvatars = onValue(avatarsRef, (snap) => {
+    const raw = (snap.val() ?? {}) as Record<string, unknown>;
+    const map: Record<string, string> = {};
+    for (const [pid, v] of Object.entries(raw)) if (typeof v === 'string') map[pid] = v;
+    handlers.onAvatars(map);
+  }, (error) => {
+    console.warn('[Firebase] avatar sync warning:', error);
+  });
+  unsubs.push(unsubAvatars);
+
+  if (beatTimer) clearInterval(beatTimer);
+  beatTimer = setInterval(() => { void beat(db, code, id); }, BEAT_MS);
+
   // 3. Tự động resync + tái đăng ký presence khi kết nối mạng được khôi phục
   let initialConnected = true;
   const connectedRef = ref(db, '.info/connected');
@@ -196,6 +283,8 @@ export function connect(code: string, handlers: Handlers): boolean {
 }
 
 export function disconnect() {
+  if (beatTimer) { clearInterval(beatTimer); beatTimer = null; }
+  lastPing = null;
   if (!conn) return;
   for (const unsub of conn.unsubs) {
     try {

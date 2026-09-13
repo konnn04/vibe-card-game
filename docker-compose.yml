@@ -1,0 +1,69 @@
+###############################################################################
+# Ú Nồ — chạy trên host riêng.
+#
+#   cp .env.example .env      # rồi điền giá trị thật
+#   docker compose up -d --build
+#
+# Đọc kỹ hai chỗ đánh dấu "LƯU Ý" bên dưới trước khi sửa.
+###############################################################################
+
+services:
+  uno:
+    build:
+      context: .
+      # LƯU Ý 1 — mọi biến NEXT_PUBLIC_* phải đi vào ở ĐÂY, không phải ở
+      # `environment:`. Chúng được nhúng thẳng vào gói JavaScript lúc build;
+      # khai ở environment thì lúc đó đã muộn, trình duyệt nhận chuỗi rỗng và
+      # phần chơi online im lặng không chạy (menu vẫn vào được nên rất dễ tưởng
+      # là lỗi khác).
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
+        NEXT_PUBLIC_DISCORD_CLIENT_ID: ${NEXT_PUBLIC_DISCORD_CLIENT_ID}
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
+        NEXT_PUBLIC_FIREBASE_DATABASE_URL: ${NEXT_PUBLIC_FIREBASE_DATABASE_URL}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID}
+        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}
+        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID}
+        # Đóng dấu phiên bản (không bắt buộc). Chạy:
+        #   GIT_SHA=$(git rev-parse --short=7 HEAD) \
+        #   GIT_COUNT=$(git rev-list --count HEAD) docker compose up -d --build
+        GIT_SHA: ${GIT_SHA:-}
+        GIT_COUNT: ${GIT_COUNT:-}
+
+    image: uno-discord-activity:latest
+    container_name: uno
+    restart: unless-stopped
+
+    # Bí mật phía server — những cái này CHỈ đọc lúc chạy nên để ở đây là đúng.
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      FIREBASE_DATABASE_URL: ${FIREBASE_DATABASE_URL}
+      FIREBASE_SERVICE_ACCOUNT_KEY: ${FIREBASE_SERVICE_ACCOUNT_KEY}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
+
+    ports:
+      # Chỉ mở ra localhost; TLS và tên miền để reverse proxy phía trước lo
+      # (Caddy/nginx/Cloudflare Tunnel). Discord Activity BẮT BUỘC HTTPS.
+      - "127.0.0.1:3000:3000"
+
+    # LƯU Ý 2 — GIỮ ĐÚNG MỘT BẢN CHẠY. Hẹn giờ đẩy ván (roomTimers), khoá dự
+    # phòng và bộ nhớ đệm đều nằm trong bộ nhớ CỦA TỪNG TIẾN TRÌNH. Chạy 2
+    # replica thì mỗi bên tự hẹn giờ cho cùng một phòng — không hỏng dữ liệu
+    # (đã có khoá trên Firebase) nhưng chạy trùng và khó lần khi có sự cố.
+    # Muốn scale thật thì phải đưa hẹn giờ ra ngoài tiến trình trước đã.
+    deploy:
+      replicas: 1
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

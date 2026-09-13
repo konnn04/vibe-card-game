@@ -52,3 +52,5 @@ node_modules/
 /src/generated/
 text.txt
 !.env.example
+# Sao lưu luật Firebase do scripts/deploy-rules.mjs tạo
+database.rules.backup.json

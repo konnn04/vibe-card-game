@@ -7,19 +7,35 @@ export const PRESETS = ['🤖', '🐼', '🦊', '🐨', '🐯', '🐰'];
 const PRESET_BG = ['#ff2d55', '#2179dd', '#ff8410', '#2eb84e', '#8348d1', '#12b9b9'];
 
 export function Avatar({
-  name, preset, size = 40, useStored = false, avatarUrl, showUpload = false, className,
-}: { name: string; preset: number; size?: number; useStored?: boolean; avatarUrl?: string | null; showUpload?: boolean; className?: string }) {
+  name, preset, size = 40, self = false, avatarUrl, showUpload = false, className,
+}: {
+  name: string;
+  preset: number;
+  size?: number;
+  /**
+   * ĐÂY CÓ PHẢI CHÍNH MÌNH KHÔNG — chứ không phải "có được dùng ảnh đã lưu".
+   *
+   * Ảnh tự tải lên nằm trong IndexedDB của MÁY NÀY, nên nó chỉ đúng với một
+   * người duy nhất. Tên cũ (self) đọc như một cái công tắc vô hại, và đã bị
+   * bật cho MỌI người chơi thật ở màn chia bài — kết quả là cả bàn đội chung
+   * avatar của mình, trông y như "avatar load chéo nhau".
+   */
+  self?: boolean;
+  avatarUrl?: string | null;
+  showUpload?: boolean;
+  className?: string;
+}) {
   const avatarKey = useSettings((s) => s.avatarKey);
   const storedAvatarUrl = useSettings((s) => s.avatarUrl);
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let dead = false;
-    if (useStored && avatarKey) getBlobUrl(AVATAR_KEY).then((u) => { if (!dead) setUrl(u); });
+    if (self && avatarKey) getBlobUrl(AVATAR_KEY).then((u) => { if (!dead) setUrl(u); });
     return () => { dead = true; };
-  }, [useStored, avatarKey]);
+  }, [self, avatarKey]);
 
-  const activeImgUrl = avatarUrl || (useStored ? (avatarKey ? url : storedAvatarUrl) : null);
+  const activeImgUrl = avatarUrl || (self ? (avatarKey ? url : storedAvatarUrl) : null);
 
   return (
     <div

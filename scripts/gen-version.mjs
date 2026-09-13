@@ -33,8 +33,14 @@ const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 /** major.minor lấy từ package.json — chỉ đổi khi CON NGƯỜI quyết định. */
 const [major = '0', minor = '0'] = String(pkg.version ?? '0.0.0').split('.');
 
-const sha = git('rev-parse', '--short=7', 'HEAD');
-const count = git('rev-list', '--count', 'HEAD');
+/*
+ * Trong image Docker KHÔNG có thư mục .git (xem .dockerignore), nên git() trả
+ * rỗng và dòng phiên bản sẽ tụt về "v0.1.0" — mất sạch ý nghĩa đúng lúc cần
+ * nhất, tức là trên bản đang chạy thật. Cho phép truyền tay qua biến môi
+ * trường; ở máy dev thì vẫn ưu tiên hỏi git như cũ.
+ */
+const sha = git('rev-parse', '--short=7', 'HEAD') || (process.env.RUSH_GIT_SHA ?? '').slice(0, 7);
+const count = git('rev-list', '--count', 'HEAD') || (process.env.RUSH_GIT_COUNT ?? '');
 const date = git('log', '-1', '--format=%cI');
 const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
 // Có thay đổi chưa commit -> đánh dấu, để không nhầm bản build thử với bản đã chốt.

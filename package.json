@@ -17,7 +17,9 @@
     "test:ui": "playwright test --ui",
     "verify": "pnpm typecheck && pnpm lint && pnpm build",
     "pretypecheck": "node scripts/gen-version.mjs && next typegen",
-    "stamp": "node scripts/gen-version.mjs"
+    "stamp": "node scripts/gen-version.mjs",
+    "rules": "node scripts/deploy-rules.mjs",
+    "rules:deploy": "node scripts/deploy-rules.mjs --apply"
   },
   "dependencies": {
     "@discord/embedded-app-sdk": "^2.5.0",

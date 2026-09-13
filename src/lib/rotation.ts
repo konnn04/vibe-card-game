@@ -12,7 +12,7 @@
  * Chép luật này ra hai chỗ thì sớm muộn màn hình hứa một đằng, server làm một
  * nẻo — kiểu lỗi người chơi phát hiện trước lập trình viên.
  */
-export interface RotationInput<T extends { id: string }> {
+export interface RotationInput<T extends { id: string; watchOnly?: boolean }> {
   seats: (T | null)[];
   queue: T[];
   hostId: string;
@@ -23,12 +23,21 @@ export interface RotationInput<T extends { id: string }> {
 export interface Rotation<T> {
   /** Chỉ số ghế bị đổi người. */
   seat: number;
+  /** Vị trí trong hàng chờ của người sắp vào — KHÔNG phải lúc nào cũng là 0,
+   *  vì người chọn "chỉ xem" bị bỏ qua. */
+  queueIndex: number;
   out: T;
   in: T;
 }
 
-export function pickRotation<T extends { id: string }>(opts: RotationInput<T>): Rotation<T> | null {
-  const incoming = opts.queue[0];
+export function pickRotation<T extends { id: string; watchOnly?: boolean }>(
+  opts: RotationInput<T>,
+): Rotation<T> | null {
+  // Người trong hàng chờ có thể chọn CHỈ XEM. Họ vẫn ở trong phòng, vẫn thấy
+  // bàn, nhưng không bao giờ bị đẩy vào ghế — nếu không thì "ngồi xem" biến
+  // thành "bị bắt chơi" ngay ván sau.
+  const queueIndex = opts.queue.findIndex((q) => !q.watchOnly);
+  const incoming = opts.queue[queueIndex];
   if (!incoming) return null;
   const candidates = opts.seats
     .map((s, i) => ({ s, i }))
@@ -38,7 +47,7 @@ export function pickRotation<T extends { id: string }>(opts: RotationInput<T>): 
     .sort((a, b) => (opts.consecutive[b.s.id] ?? 0) - (opts.consecutive[a.s.id] ?? 0));
   const out = candidates[0];
   if (!out) return null;
-  return { seat: out.i, out: out.s, in: incoming };
+  return { seat: out.i, queueIndex, out: out.s, in: incoming };
 }
 
 /** Danh sách ghế SAU khi xoay vòng — dùng để hiện trước đội hình ván sau. */

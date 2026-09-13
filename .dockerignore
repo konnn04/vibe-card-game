@@ -1,0 +1,19 @@
+# Thư mục nặng / sinh ra lúc build — không đưa vào context gửi cho Docker.
+node_modules
+.next
+.git
+test-results
+playwright-report
+blob-report
+playwright/.cache
+src/generated
+
+# Bí mật: KHÔNG bao giờ nằm trong image. Truyền qua env lúc chạy.
+.env
+.env.*
+!.env.example
+
+# Rác
+*.log
+.DS_Store
+.vercel

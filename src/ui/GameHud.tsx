@@ -13,6 +13,7 @@ import { useSettings } from '@/src/lib/settings';
 import { Avatar } from './Avatar';
 import { DirectionBadge } from './DirectionBadge';
 import { UI } from '@/src/config';
+import { isTakenOver } from '@/src/lib/takeover';
 
 /**
  * Giây còn lại của lượt — ĐẾM CỤC BỘ, không so với mốc thời gian của server.
@@ -123,18 +124,10 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
   const state = useMatch((s) => s.state);
   const myId = useMatch((s) => s.myId);
   const act = useMatch((s) => s.act);
-  const toast = useMatch((s) => s.toast);
-  const clearToast = useMatch((s) => s.clearToast);
   const fx = useMatch((s) => s.fx);
   const avatarPreset = useSettings((s) => s.avatarPreset);
   const animating = useTurnHold();
   const left = useSecondsLeft(state?.turnDeadline ?? 0, animating, state?.rules.turnSeconds ?? 20);
-
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(clearToast, UI.toastMs);
-    return () => clearTimeout(id);
-  }, [toast, clearToast]);
 
   const me = state?.players.find((p) => p.id === myId);
   /**
@@ -317,6 +310,17 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
               border: '1px solid rgba(255,215,140,.3)',
             }}
           >
+            {/* Ghế đang bị máy giữ hộ: nói rõ ngay trên bảng điểm, để nhìn một
+                chỗ là biết cả bàn ai còn ai rớt. */}
+            {isTakenOver(p) && (
+              <span
+                className="mr-1.5 rounded px-1 text-[10px] font-bold align-middle"
+                style={{ background: 'rgba(226,72,59,.9)', color: '#fff' }}
+                title={t('aiTookOver', { name: p.name })}
+              >
+                AI
+              </span>
+            )}
             {p.name} · {p.score}
           </div>
         ))}
@@ -393,7 +397,7 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
               name={me?.name ?? ''}
               preset={avatarPreset}
               size={myTurn ? 78 : 70}
-              useStored
+              self
               className={`seat__avatar !rounded-full ${myTurn ? 'avatar--turn' : ''}`}
             />
           </div>
@@ -520,16 +524,6 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
         names={state.players.filter((p) => p.id !== myId).map((p) => ({ id: p.id, name: p.name, n: p.hand.length }))}
         onPick={(id) => act({ type: 'SWAP_TARGET', playerId: myId, targetId: id })}
       />
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="label absolute bottom-[200px] left-1/2 -translate-x-1/2 rounded-lg bg-black/70 px-4 py-2 text-[13px]"
-          >
-            {toast}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

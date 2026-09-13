@@ -62,3 +62,35 @@ export async function encodeSquareWebp(source: CanvasImageSource, size: number, 
 }
 
 export const AVATAR_KEY = 'avatar';
+
+/**
+ * BẢN NHỎ CỦA ẢNH ĐẠI DIỆN ĐỂ CHIA SẺ TRONG PHÒNG.
+ *
+ * Bản trong máy là 256px cho HUD của chính mình (vẽ to). Bản gửi cho cả bàn thì
+ * chỉ hiện ở cỡ 30–60px, nên mã lại 128px: ~2–4KB thay vì ~10KB, mà mắt không
+ * phân biệt được. Nhân với 4 người và mỗi lần có ai vào phòng, phần chênh đó là
+ * thật.
+ *
+ * Trả về data URL vì nó đi thẳng vào Realtime Database (JSON) rồi ra thẳng
+ * thuộc tính src — không phải dựng thêm chỗ lưu file nào.
+ */
+export const SHARE_AVATAR_PX = 128;
+
+export async function sharedAvatarDataUrl(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  const blob = await getBlob(AVATAR_KEY);
+  if (!blob) return null;
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const small = await encodeSquareWebp(bitmap, SHARE_AVATAR_PX, 0.78);
+    bitmap.close();
+    return await new Promise<string>((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(String(fr.result));
+      fr.onerror = () => rej(fr.error);
+      fr.readAsDataURL(small);
+    });
+  } catch {
+    return null;
+  }
+}

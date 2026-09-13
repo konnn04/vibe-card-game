@@ -10,6 +10,7 @@ import { randomName } from '@/src/lib/names';
 import { setMusicPlaying } from '@/src/lib/audio';
 import { discordRoomCode, isDiscordActivity, getDiscordUser } from '@/src/lib/discord';
 import { clearRoomInUrl, roomCodeFromUrl, setRoomInUrl } from '@/src/lib/roomLink';
+import { sharedAvatarDataUrl } from '@/src/lib/idb';
 import { useRoom, type Seat } from '@/src/state/room';
 import { useMatch } from '@/src/state/match';
 import {
@@ -25,6 +26,8 @@ import { DealIntro } from '@/src/ui/DealIntro';
 import { Profile } from '@/src/ui/Profile';
 import { SettingsPanel } from '@/src/ui/Settings';
 import { HowToPlay } from '@/src/ui/HowToPlay';
+import { Toast } from '@/src/ui/Toast';
+import { SpectatorRail } from '@/src/ui/SpectatorRail';
 
 // WebGL chỉ khởi tạo khi vào bàn -> menu không tốn GPU context
 const GameCanvas = dynamic(() => import('@/src/three/Scene').then((m) => m.GameCanvas), { ssr: false });
@@ -32,7 +35,7 @@ const GameCanvas = dynamic(() => import('@/src/three/Scene').then((m) => m.GameC
 type Screen = 'menu' | 'lobby' | 'intro' | 'game';
 
 function Shell() {
-  const { username, set } = useSettings();
+  const set = useSettings((s) => s.set);
   // Chặn menu cho tới khi ảnh bài + âm thanh + font đã nằm trong cache.
   const [loaded, setLoaded] = useState(false);
   const [screen, setScreen] = useState<Screen>('menu');
@@ -126,6 +129,8 @@ function Shell() {
         });
       },
       onHand: (cards) => useMatch.getState().applyHand(cards),
+      onPresence: (map) => useRoom.getState().applyPresence(map),
+      onAvatars: (map) => useRoom.getState().applyAvatars(map),
       onResync: () => {
         void api.snapshot(code, playerId(), loadToken(code)).then(applySnapshot).catch(() => {});
       },
@@ -143,6 +148,11 @@ function Shell() {
       const snap = await api.snapshot(code, playerId(), token);
       applySnapshot(snap);
       listen(code);
+      // Ảnh tự tải lên chỉ nằm trong máy này, nên phải gửi một BẢN TẠM vào phòng
+      // thì cả bàn mới thấy được. Không có ảnh thì thôi, không gửi gì.
+      void sharedAvatarDataUrl()
+        .then((img) => (img ? api.avatar(code, playerId(), token, img) : null))
+        .catch(() => {});
       // Vào phòng xong mới ghi mã lên URL: link chỉ trỏ tới phòng có thật.
       setRoomInUrl(code);
     } catch (e) {
@@ -175,10 +185,22 @@ function Shell() {
       void enterOnline(async () => {
         const saved = loadToken(code);
         if (saved) {
-          // Kiểm tra token còn sống trước khi coi là reconnect thành công.
-          await api.snapshot(code, playerId(), saved);
-          return { code, token: saved };
+          /*
+           * KIỂM TRA VÉ CÒN SỐNG THẬT.
+           *
+           * snapshotFor() KHÔNG bao giờ ném khi vé sai — nó chỉ trả về bản đã
+           * che kèm `you: null`. Bản cũ gọi rồi bỏ qua kết quả, nên vé chết vẫn
+           * được coi là reconnect thành công; client vào phòng với một cái vé vô
+           * dụng và từ đó mọi thao tác trả về {error:"unauthorized"} mà không có
+           * đường thoát nào. `you` chính là câu trả lời cho "vé này còn dùng
+           * được không".
+           */
+          const snap = await api.snapshot(code, playerId(), saved);
+          if (snap.you) return { code, token: saved };
         }
+        // Không có vé, hoặc vé đã chết (phòng dựng lại, hết hạn, bị dọn) -> vào
+        // lại như khách mới. Ghế cũ vẫn mang id của mình nên seatOrQueue trả về
+        // đúng ghế đó, và snapshot ngay sau đây sẽ đòi lại ghế từ máy.
         const res = await api.join(code, netMe());
         return { code, token: res.token };
       }).catch(() => clearRoomInUrl());
@@ -248,6 +270,8 @@ function Shell() {
   const exit = useCallback(() => {
     const { mode, code, meId } = useRoom.getState();
     if (mode === 'online' && code) {
+      // Xoá bản tạm trước khi rời: ảnh chỉ sống đúng trong phòng đang chơi.
+      void api.avatar(code, meId, loadToken(code), null).catch(() => {});
       void api.leave(code, meId, loadToken(code)).catch(() => {});
       disconnect();
       stopPoll.current?.();
@@ -310,10 +334,13 @@ function Shell() {
       {screen === 'game' && (
         <>
           <GameHud onExit={exit} onSettings={() => setModal('settings')} />
+          <SpectatorRail />
           <Fx />
           <RoundOverlay onNext={nextRound} onExit={exit} />
         </>
       )}
+
+      <Toast />
 
       {modal === 'profile' && <Profile onClose={() => setModal(null)} />}
       {modal === 'settings' && <SettingsPanel onClose={() => setModal(null)} />}

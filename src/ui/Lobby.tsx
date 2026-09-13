@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
 import { useRoom, type Seat } from '@/src/state/room';
 import { ThemePicker } from './ThemePicker';
+import { useAvatarLookup } from '@/src/state/room';
 import { Backdrop } from './Backdrop';
 import { themeMeta } from '@/src/lib/themes';
 import { useActiveTheme } from '@/src/state/room';
@@ -57,6 +58,8 @@ function SeatChip({ seat, index, meId, canEdit, position, isCompact }: {
   const toQueue = useRoom((s) => s.toQueue);
   const { setNodeRef: dropRef, isOver } = useDroppable({ id: `seat-${index}` });
   const isMe = seat?.id === meId;
+  // Một nguồn duy nhất cho avatar: ảnh tạm trong phòng > ảnh Discord > preset.
+  const avatarOf = useAvatarLookup();
   const canDrag = !!seat && (canEdit || isMe);
   const drag = useDraggable({ id: `seat-${index}`, disabled: !canDrag });
 
@@ -80,8 +83,8 @@ function SeatChip({ seat, index, meId, canEdit, position, isCompact }: {
             name={seat.name}
             preset={seat.avatarPreset}
             size={isCompact ? 28 : 36}
-            avatarUrl={seat.avatarUrl}
-            useStored={isMe}
+            avatarUrl={avatarOf(seat.id).url}
+            self={isMe}
             className="seat__avatar !rounded-lg overflow-hidden"
           />
           <div className="display" style={{ fontSize: isCompact ? 14 : 17, color: isMe ? '#2A1508' : '#FFF3DA' }}>

@@ -34,9 +34,9 @@ export default function PrivacyPage() {
           <strong>Vé phòng</strong> — token của từng phòng đã vào, để F5 giữa ván vẫn về đúng ghế.
         </li>
         <li>
-          <strong>Ảnh đại diện tự tải lên</strong> — lưu ở <code>IndexedDB</code> ngay trong trình
-          duyệt. Ảnh này <strong>không bao giờ được gửi lên máy chủ</strong> và người chơi khác
-          không nhìn thấy; họ chỉ thấy avatar mặc định bạn chọn.
+          <strong>Ảnh đại diện tự tải lên</strong> — bản gốc lưu ở <code>IndexedDB</code> ngay trong
+          trình duyệt và không đi đâu cả. Khi bạn vào một phòng online, một <em>bản thu nhỏ</em>
+          (128px) được gửi lên để những người cùng bàn nhìn thấy bạn — xem mục 2.
         </li>
       </ul>
       <p>
@@ -47,23 +47,42 @@ export default function PrivacyPage() {
       <h2>2. Gửi lên máy chủ khi chơi online</h2>
       <p>Chỉ khi bạn tạo hoặc vào một phòng online. Chơi với bot thì không có gì rời khỏi máy bạn.</p>
       <ul>
-        <li>Mã người chơi, tên hiển thị, số hiệu avatar mặc định.</li>
+        <li>Mã người chơi, <strong>tên hiển thị</strong>, số hiệu avatar mặc định.</li>
+        <li>
+          <strong>Ảnh đại diện</strong>, nếu bạn có đặt: bản thu nhỏ 128px của ảnh bạn tải lên, hoặc
+          đường dẫn ảnh Discord khi chơi qua Discord Activity. Đây là thứ duy nhất cho người cùng
+          bàn thấy mặt bạn — không lưu thì không truyền cho nhau được.
+        </li>
         <li>Trạng thái ván đấu: bài trên tay, lượt, luật nhà, chủ đề nền của phòng.</li>
-        <li>Một cờ &ldquo;đang online&rdquo; để bàn biết ai vừa rớt mạng.</li>
+        <li>
+          Một cờ &ldquo;đang online&rdquo; kèm <strong>độ trễ mạng</strong> (ms) để bàn biết ai vừa
+          rớt mạng.
+        </li>
       </ul>
       <p>
-        Dữ liệu phòng nằm trong Firebase Realtime Database của <em>người dựng máy chủ</em>, và{' '}
-        <strong>tự hết hạn sau 6 giờ</strong>. Rời phòng thì ghế của bạn được gỡ ngay. Không có lịch
-        sử ván đấu, không có bảng xếp hạng toàn cầu, không có hồ sơ lâu dài.
+        Tất cả nằm trong Firebase Realtime Database của <em>người dựng máy chủ</em>, gắn với ĐÚNG một
+        phòng, và <strong>tự hết hạn sau 6 giờ</strong> cùng phòng đó. Rời phòng thì ghế và ảnh đại
+        diện của bạn bị xoá ngay. Không có lịch sử ván đấu, không có bảng xếp hạng toàn cầu, không có
+        hồ sơ lâu dài — lần sau vào phòng khác là bắt đầu lại từ đầu.
+      </p>
+      <p>
+        Nói rõ: ảnh và tên ở đây <strong>ai trong phòng cũng đọc được</strong> — đó chính là mục đích
+        của chúng. Đừng đặt ảnh hay tên mà bạn không muốn người cùng bàn nhìn thấy.
       </p>
 
       <h2>3. Khi chạy trong Discord</h2>
       <p>
         Ở dạng Discord Activity, trang đọc các tham số Discord đặt sẵn trên URL (
         <code>frame_id</code>, <code>instance_id</code>) để biết mình đang chạy trong Discord và để
-        suy ra một mã phòng mặc định cho voice channel đó. Ứng dụng{' '}
-        <strong>không yêu cầu OAuth, không đọc hồ sơ Discord, không đọc tin nhắn</strong> — tên,
-        ảnh đại diện và tài khoản Discord của bạn không bao giờ được đọc tới.
+        suy ra một mã phòng mặc định cho voice channel đó.
+      </p>
+      <p>
+        Ứng dụng có <strong>xin quyền <code>identify</code> của Discord</strong> để lấy{' '}
+        <strong>tên hiển thị và ảnh đại diện</strong> của bạn, cho khỏi phải gõ tay mỗi lần vào.
+        Discord sẽ hiện hộp xác nhận trước khi cấp. Ngoài hai thứ đó, ứng dụng{' '}
+        <strong>không đọc tin nhắn, không đọc danh sách bạn bè, không đọc server nào</strong>, và
+        cũng không lưu mã tài khoản Discord của bạn ở đâu cả — chỉ tên và đường dẫn ảnh, sống trong
+        phòng đang chơi rồi hết hạn cùng phòng (mục 2).
       </p>
       <p>
         Nói cho đủ: mã phòng mặc định được <em>cắt ra từ</em> <code>instance_id</code> của voice

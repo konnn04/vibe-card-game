@@ -7,13 +7,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing code' }, { status: 400 });
     }
 
-    const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || '1459138901586219091';
+    /*
+     * KHÔNG đoán client id mặc định.
+     *
+     * Trước đây chỗ này và src/lib/discord.ts mỗi nơi đoán một app id KHÁC
+     * NHAU. Bình thường không lộ vì biến env có thật; nhưng chỉ cần quên truyền
+     * NEXT_PUBLIC_* lúc build (biến công khai được nhúng vào gói lúc build, khai
+     * lúc chạy là muộn) thì client xin code với app A còn server đổi code với
+     * app B — OAuth hỏng kèm một thông báo chẳng liên quan gì tới nguyên nhân.
+     * Thiếu cấu hình thì phải BÁO THẲNG, đừng đoán.
+     */
+    const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
     const clientSecret = process.env.DISCORD_CLIENT_SECRET;
 
+    if (!clientId) {
+      return NextResponse.json(
+        { error: 'NEXT_PUBLIC_DISCORD_CLIENT_ID is not configured (must be set at BUILD time)' },
+        { status: 500 },
+      );
+    }
     if (!clientSecret) {
       return NextResponse.json(
         { error: 'DISCORD_CLIENT_SECRET is not configured on server' },
-        { status: 400 },
+        { status: 500 },
       );
     }
 
