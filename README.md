@@ -2,9 +2,10 @@
 
 > This game was created by me and AI; it is not intended for reference purposes.
 
-A 3D card party game for the browser and for Discord Activities. Play the
-classic deck or the double-sided **Flip** deck, against bots or with up to four
-people in a shared room.
+A 3D card party game that runs **as an ordinary website and as a Discord
+Activity from the same build** — one deploy, one URL, no separate client. Play
+the classic deck or the double-sided **Flip** deck, against bots or with up to
+four people in a shared room.
 
 Built with Next.js 16 (App Router), React Three Fiber, and Firebase Realtime
 Database. The rules live in a dependency-free TypeScript package so the same
@@ -14,6 +15,7 @@ engine runs on the server and in the browser.
 
 ## Table of contents
 
+- [Two ways to play](#two-ways-to-play)
 - [Quick start](#quick-start)
 - [Scripts](#scripts)
 - [Configuration](#configuration)
@@ -27,6 +29,26 @@ engine runs on the server and in the browser.
 - [Troubleshooting](#troubleshooting)
 
 ---
+
+## Two ways to play
+
+The app detects its own context at runtime — there is no build flag, no second
+entry point, and no Discord SDK on the critical path. Everything below the
+detection line is identical in both.
+
+| | **Web** | **Discord Activity** |
+| --- | --- | --- |
+| How it opens | Any browser, your own URL | The activity shelf in a voice channel |
+| Detection | default | `frame_id` / `instance_id` in the query string **and** running inside an iframe (`src/lib/discord.ts`) |
+| Finding each other | Share a `?room=CODE` link, or type the 6-character code | A default room code is derived from the voice channel's `instance_id`, so everyone who launches it lands in the same room |
+| Identity | Name and avatar from local settings | Same — the app never requests OAuth and never reads your Discord profile. The only Discord value it touches is the voice channel `instance_id`, and only to derive a room code from it |
+| Refresh / reconnect | Reopen the same link; the seat token in `localStorage` puts you back in your chair | Same |
+
+Nothing about the rules, networking, rendering or audio differs between the two.
+A Discord Activity is just this site in an iframe that happens to have a room
+code handed to it.
+
+Solo-versus-bots needs neither context nor a server: the engine runs in the tab.
 
 ## Quick start
 
@@ -86,6 +108,7 @@ Copy `.env.example` to `.env` if present, or create `.env` with:
 | `FIREBASE_DATABASE_URL` | for online play | Same URL for the server; falls back to the public one |
 | `FIREBASE_SERVICE_ACCOUNT_KEY` | for online play | Service account as raw JSON, base64, **or** a path to a key file |
 | `NEXT_PUBLIC_FIREBASE_API_KEY`, `..._PROJECT_ID` | optional | Used to detect whether a browser Firebase client can be created |
+| `NEXT_PUBLIC_SITE_URL` | for deployment | Public origin. Share links, `sitemap.xml` and the Open Graph image resolve against it; defaults to `localhost:3000` |
 
 Without these the app still runs: online buttons fall back to snapshot polling,
 and solo-versus-bots is unaffected.
@@ -152,10 +175,19 @@ cannot drift apart.
 ### Anti-cheat
 
 Opponents' hands and the draw pile are masked server-side before broadcast; your
-own cards arrive on a private channel. The one deliberate exception is the Flip
-deck, where a card's reverse face is public information in the real game — so
-the top of the draw pile reveals **only** its non-active face, never the side
-that is about to be played.
+own cards arrive on a private channel.
+
+The Flip deck is a deliberate, rule-driven exception. A Flip card has two real
+faces, and **the face turned away from you is public information at a real
+table** — deciding whether to flip is the whole strategic layer of the game, and
+it only works if you can see what everyone will be holding afterwards. So
+`maskCard` blanks only the **active** face and leaves the other one intact, for
+opponents' hands and for the top of the draw pile alike. You still cannot see
+what anyone can play *right now*; you can see what they will hold after a flip,
+exactly as at a physical table.
+
+This is not a hole in the masking, it is the masking being side-aware. The
+classic deck has one face, so it is blanked outright.
 
 ## Themes
 
@@ -221,21 +253,42 @@ row only keeps the newest run.
 
 ## Deployment
 
+One build serves both targets. Deploy once, then optionally point Discord at the
+same URL.
+
+### As a website
+
 Any Node host that runs `next build` / `next start` works, as does Vercel.
+Set `NEXT_PUBLIC_SITE_URL` so share links, `sitemap.xml` and the Open Graph
+preview point at the real domain instead of `localhost`.
 
-For a **Discord Activity**, serve the app over HTTPS and point the Activity URL
-mapping at it. In the Developer Portal you only need the URL mapping — leave
-**Interactions Endpoint URL** and **Linked Roles Verification URL** blank (they
-are for HTTP slash commands and OAuth linked roles, neither of which this app
-uses; a wrong interactions URL will actually fail Discord's signed-PING check).
-**Terms of Service** and **Privacy Policy** are optional until you submit for
-verification, and are served at `/legal/terms` and `/legal/privacy`.
+That is the whole deployment. Players share `?room=CODE` links; reopening one
+after a refresh reconnects to the same seat using the token in `localStorage`.
 
-The app reads `frame_id` / `instance_id` from the query string to
-detect the embedded context and derives a default room code from the voice
-channel instance. Sharing works through `?room=CODE` — opening that link joins
-the room, and reopening it after a refresh reconnects to the same seat using the
-token in `localStorage`.
+### Also as a Discord Activity
+
+Serve the same deployment over HTTPS and add a URL mapping in the Developer
+Portal. Nothing in the build changes — the app notices it is embedded and
+derives a default room code from the voice channel's `instance_id`, so everyone
+who launches the activity lands in the same room without typing a code.
+
+In the portal you only need the URL mapping:
+
+- **Interactions Endpoint URL** — leave blank. It is for receiving slash
+  commands over HTTP; an Activity never uses it, and a wrong value fails
+  Discord's signed-PING check when you try to save.
+- **Linked Roles Verification URL** — leave blank. OAuth linked roles, unused.
+- **Terms of Service** / **Privacy Policy** — optional until you submit for
+  verification. Served at `/legal/terms` and `/legal/privacy`.
+
+**Map the Firebase host too, if you want realtime online play.** Discord blocks
+requests to origins you have not mapped, and the browser talks to Realtime
+Database directly over a WebSocket — so add a mapping for the host in
+`NEXT_PUBLIC_FIREBASE_DATABASE_URL` (`<project>.firebasedatabase.app` or
+`<project>.firebaseio.com`). Without it the app is not broken, it just falls
+back to polling its own `/api` routes: rooms still work, they update a little
+slower. Everything else — fonts, card art, audio — is served from your own
+origin, so there is nothing else to map.
 
 ## Troubleshooting
 
@@ -248,10 +301,21 @@ console: a file that fails to decode logs a warning naming it.
 audio before a user gesture. Check that `public/music-theme/manifest.json` is
 not empty.
 
-**Cards render as flat dark rectangles.** The sprite lookup missed. Confirm that
-the atlas `.json` next to the `.jpg` contains the sprite name being requested;
-note the Flip dark atlas deliberately has no `back_side`, because in Flip a
-card's back *is* its other real face.
+**Cards render as flat dark rectangles.** That is the placeholder material,
+which should only ever show for the few hundred ms before the atlas finishes
+loading. Seeing it mid-match means a sprite lookup missed: confirm the atlas
+`.json` next to the `.jpg` contains the name being requested. Note the Flip dark
+atlas deliberately has no `back_side` — in Flip a card's back *is* its other
+real face — so anything asking for one there falls back to the light atlas.
+
+**The Discord Activity shows a blank frame.** Check that the URL mapping points
+at an HTTPS origin that actually serves the app, then open the activity's
+devtools — a blank frame is almost always a blocked request to an origin you
+have not mapped.
+
+**Inside Discord the game works but rooms update slowly.** The Firebase host is
+not mapped, so the realtime WebSocket is blocked and the app fell back to
+polling its own API. See [Deployment](#deployment).
 
 **Online rooms do nothing.** Firebase is not configured — see
 [Configuration](#configuration). The UI falls back to polling and will say so.

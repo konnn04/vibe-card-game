@@ -60,10 +60,16 @@ export default function PrivacyPage() {
       <h2>3. Khi chạy trong Discord</h2>
       <p>
         Ở dạng Discord Activity, trang đọc các tham số Discord đặt sẵn trên URL (
-        <code>frame_id</code>, <code>instance_id</code>) chỉ để biết mình đang chạy trong Discord và
-        để suy ra một mã phòng mặc định cho voice channel đó. Ứng dụng{' '}
-        <strong>không yêu cầu OAuth, không đọc hồ sơ Discord, không đọc tin nhắn</strong> và không
-        lưu bất cứ định danh Discord nào.
+        <code>frame_id</code>, <code>instance_id</code>) để biết mình đang chạy trong Discord và để
+        suy ra một mã phòng mặc định cho voice channel đó. Ứng dụng{' '}
+        <strong>không yêu cầu OAuth, không đọc hồ sơ Discord, không đọc tin nhắn</strong> — tên,
+        ảnh đại diện và tài khoản Discord của bạn không bao giờ được đọc tới.
+      </p>
+      <p>
+        Nói cho đủ: mã phòng mặc định được <em>cắt ra từ</em> <code>instance_id</code> của voice
+        channel (6 ký tự cuối, viết hoa), nên mã phòng lưu trên máy chủ có nguồn gốc từ một định
+        danh của Discord. Nó là định danh của <strong>phòng thoại</strong>, không phải của người
+        chơi, và cũng biến mất cùng phòng sau 6 giờ.
       </p>
 
       <h2>4. Trẻ em</h2>

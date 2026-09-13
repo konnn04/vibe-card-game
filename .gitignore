@@ -51,3 +51,4 @@ node_modules/
 # version đóng dấu lúc build (scripts/gen-version.mjs) — đổi theo từng commit
 /src/generated/
 text.txt
+!.env.example
