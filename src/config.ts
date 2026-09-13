@@ -54,8 +54,8 @@ export const MATCH = {
 
 /** Mạng (ms). */
 export const NET = {
-  /** Chu kỳ poll snapshot khi KHÔNG có Firebase realtime. */
-  pollMs: 1500,
+  /** Chu kỳ poll snapshot khi KHÔNG có Firebase realtime (hoặc chạy trong Discord Activity). */
+  pollMs: 1000,
   /** Chờ tối đa lúc tải tài nguyên ở màn loading rồi vào game bằng mọi giá. */
   preloadTimeoutMs: 12000,
   /** Nhịp nghỉ cuối màn loading để thanh tiến trình chạy hết 100%, không giật tắt. */

@@ -12,10 +12,11 @@ export function discordParams(): URLSearchParams | null {
 }
 
 export function isDiscordActivity(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (window.location.hostname.includes('discordsays.com')) return true;
   const q = discordParams();
-  if (!q) return false;
-  const inIframe = typeof window !== 'undefined' && window.self !== window.top;
-  return inIframe && (q.has('frame_id') || q.has('instance_id'));
+  const inIframe = window.self !== window.top;
+  return inIframe && (q?.has('frame_id') || q?.has('instance_id') || false);
 }
 
 /** instance_id của voice channel = mã phòng mặc định khi mở Activity. */
@@ -33,25 +34,10 @@ export interface DiscordUser {
   avatarUrl: string | null;
 }
 
-let urlMappingsPatched = false;
-export function setupDiscordUrlMappings() {
-  if (typeof window === 'undefined' || urlMappingsPatched || !isDiscordActivity()) return;
-  urlMappingsPatched = true;
-  try {
-    const rawUrl = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL;
-    const targetHost = rawUrl
-      ? new URL(rawUrl).host
-      : 'rush-games-e8823-default-rtdb.asia-southeast1.firebasedatabase.app';
+import { applyDiscordUrlPatch } from './patchDiscord';
 
-    patchUrlMappings([
-      {
-        prefix: '/firebase',
-        target: targetHost,
-      },
-    ]);
-  } catch (e) {
-    console.warn('[Discord SDK] patchUrlMappings failed:', e);
-  }
+export function setupDiscordUrlMappings() {
+  applyDiscordUrlPatch();
 }
 
 let discordSdkInstance: DiscordSDK | null = null;

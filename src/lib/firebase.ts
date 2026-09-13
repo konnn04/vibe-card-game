@@ -1,11 +1,11 @@
 'use client';
+import './patchDiscord';
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import {
   getDatabase,
   forceWebSockets,
   type Database,
 } from 'firebase/database';
-import { setupDiscordUrlMappings } from './discord';
 
 const config = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -28,7 +28,6 @@ export function getFirebaseClientDb(): Database | null {
   if (db) return db;
 
   try {
-    setupDiscordUrlMappings();
     app = getApps().length > 0 ? getApp() : initializeApp(config);
     forceWebSockets();
     db = getDatabase(app);

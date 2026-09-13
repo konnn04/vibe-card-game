@@ -1,4 +1,5 @@
 'use client';
+import '@/src/lib/patchDiscord';
 import { ref, onValue, onDisconnect, set as fbSet, serverTimestamp, type Unsubscribe } from 'firebase/database';
 import { getFirebaseClientDb, hasFirebaseClient } from '@/src/lib/firebase';
 import type { Action, Card, DeckType, GameEvent, GameState, Rules } from '@u-no/game-engine';

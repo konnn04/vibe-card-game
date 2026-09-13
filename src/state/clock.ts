@@ -1,4 +1,5 @@
 'use client';
+import '@/src/lib/patchDiscord';
 import { ref, onValue } from 'firebase/database';
 import { MAX_HOLD_MS } from '@u-no/game-engine';
 import { getFirebaseClientDb, hasFirebaseClient } from '@/src/lib/firebase';

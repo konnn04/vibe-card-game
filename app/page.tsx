@@ -1,4 +1,5 @@
 'use client';
+import '@/src/lib/patchDiscord';
 import dynamic from 'next/dynamic';
 import { AnimatePresence } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
