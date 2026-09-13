@@ -61,7 +61,7 @@ export function getDiscordSdk(): DiscordSDK | null {
   if (typeof window === 'undefined' || !isDiscordActivity()) return null;
   setupDiscordUrlMappings();
   if (!discordSdkInstance) {
-    const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || '1459138901586219091';
+    const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || '1548513676217028698';
     discordSdkInstance = new DiscordSDK(clientId, { disableConsoleLogOverride: true });
   }
   return discordSdkInstance;
@@ -107,14 +107,31 @@ export async function getDiscordUser(): Promise<DiscordUser | null> {
   const sdk = await initDiscordSdk();
   if (!sdk) return null;
 
-  // 1. Thử OAuth2
+  // 1. Thử lấy từ activity instance participants (không cần OAuth)
+  try {
+    const res = await sdk.commands.getActivityInstanceConnectedParticipants();
+    if (res?.participants && res.participants.length > 0) {
+      const p = res.participants[0];
+      return {
+        id: p.id,
+        username: p.username,
+        discriminator: p.discriminator,
+        globalName: p.global_name || p.nickname || null,
+        avatarUrl: formatDiscordAvatarUrl(p.id, p.avatar),
+      };
+    }
+  } catch (e) {
+    console.warn('[Discord SDK] getActivityInstanceConnectedParticipants failed:', e);
+  }
+
+  // 2. Fallback: OAuth2 (chỉ khi server có DISCORD_CLIENT_SECRET)
   try {
     const { code } = await sdk.commands.authorize({
       client_id: sdk.clientId,
       response_type: 'code',
       state: '',
       prompt: 'none',
-      scope: ['identify', 'guilds.members.read'],
+      scope: ['identify'],
     });
 
     const res = await fetch('/api/discord/token', {
@@ -138,29 +155,9 @@ export async function getDiscordUser(): Promise<DiscordUser | null> {
           };
         }
       }
-    } else {
-      const err = await res.json().catch(() => ({}));
-      console.warn('[Discord SDK] OAuth token exchange skipped/failed:', err?.error);
     }
-  } catch (e) {
-    console.warn('[Discord SDK] OAuth flow error:', e);
-  }
-
-  // 2. Fallback: lấy từ instance connected participants
-  try {
-    const res = await sdk.commands.getInstanceConnectedParticipants();
-    if (res?.participants && res.participants.length > 0) {
-      const p = res.participants[0];
-      return {
-        id: p.id,
-        username: p.username,
-        discriminator: p.discriminator,
-        globalName: p.global_name || p.nickname || null,
-        avatarUrl: formatDiscordAvatarUrl(p.id, p.avatar),
-      };
-    }
-  } catch (e) {
-    console.warn('[Discord SDK] getInstanceConnectedParticipants failed:', e);
+  } catch {
+    // OAuth không khả dụng — bỏ qua im lặng, game vẫn chạy với tên ngẫu nhiên
   }
 
   return null;
