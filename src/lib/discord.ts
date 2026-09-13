@@ -1,6 +1,6 @@
 'use client';
 
-import { DiscordSDK } from '@discord/embedded-app-sdk';
+import { DiscordSDK, patchUrlMappings } from '@discord/embedded-app-sdk';
 
 /**
  * Discord Activity chạy trong iframe và truyền tham số qua query string
@@ -33,11 +33,33 @@ export interface DiscordUser {
   avatarUrl: string | null;
 }
 
+let urlMappingsPatched = false;
+export function setupDiscordUrlMappings() {
+  if (typeof window === 'undefined' || urlMappingsPatched || !isDiscordActivity()) return;
+  urlMappingsPatched = true;
+  try {
+    const rawUrl = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL;
+    const targetHost = rawUrl
+      ? new URL(rawUrl).host
+      : 'rush-games-e8823-default-rtdb.asia-southeast1.firebasedatabase.app';
+
+    patchUrlMappings([
+      {
+        prefix: '/firebase',
+        target: targetHost,
+      },
+    ]);
+  } catch (e) {
+    console.warn('[Discord SDK] patchUrlMappings failed:', e);
+  }
+}
+
 let discordSdkInstance: DiscordSDK | null = null;
 let initPromise: Promise<DiscordSDK | null> | null = null;
 
 export function getDiscordSdk(): DiscordSDK | null {
   if (typeof window === 'undefined' || !isDiscordActivity()) return null;
+  setupDiscordUrlMappings();
   if (!discordSdkInstance) {
     const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || '1459138901586219091';
     discordSdkInstance = new DiscordSDK(clientId, { disableConsoleLogOverride: true });
@@ -46,6 +68,7 @@ export function getDiscordSdk(): DiscordSDK | null {
 }
 
 export async function initDiscordSdk(): Promise<DiscordSDK | null> {
+  setupDiscordUrlMappings();
   const sdk = getDiscordSdk();
   if (!sdk) return null;
   if (initPromise) return initPromise;
