@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -11,14 +11,13 @@
 !.yarn/versions
 
 # testing
-/coverage
+coverage/
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
+# next.js & build outputs
+.next/
+out/
+build/
+dist/
 
 # misc
 .DS_Store
@@ -48,8 +47,8 @@ node_modules/
 /playwright/.cache/
 /playwright/.auth/
 
-# version đóng dấu lúc build (scripts/gen-version.mjs) — đổi theo từng commit
-/src/generated/
+# version đóng dấu lúc build (scripts/sync-version.mjs) — đổi theo từng commit
+**/src/generated/
 text.txt
 !.env.example
 # Sao lưu luật Firebase do scripts/deploy-rules.mjs tạo

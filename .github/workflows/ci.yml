@@ -5,18 +5,15 @@ on:
     branches: [main, master]
   pull_request:
 
-# Một PR đẩy nhiều commit liên tiếp thì chỉ giữ lần chạy mới nhất.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
-    name: Typecheck · Lint · Build
+    name: Stamp Version · Typecheck · Lint · Build
     runs-on: ubuntu-latest
     steps:
-      # fetch-depth: 0 — scripts/gen-version.mjs đếm commit làm số patch;
-      # clone nông mặc định chỉ có 1 commit nên mọi bản CI đều ra v0.1.1.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -26,10 +23,10 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Đánh phiên bản vào package.json và đồng bộ author sang toàn bộ packages con
+      - run: pnpm stamp
       - run: pnpm typecheck
       - run: pnpm lint
-      # build cũng chạy prebuild -> sinh lại manifest âm thanh/nhạc, nên bước
-      # này đồng thời kiểm luôn là hai script đó không hỏng.
       - run: pnpm build
 
   e2e:
@@ -37,8 +34,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: verify
     steps:
-      # fetch-depth: 0 — scripts/gen-version.mjs đếm commit làm số patch;
-      # clone nông mặc định chỉ có 1 commit nên mọi bản CI đều ra v0.1.1.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -48,8 +43,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm stamp
       - run: pnpm exec playwright install --with-deps chromium
-      # webServer trong playwright.config.ts tự build + start, không cần bước riêng.
       - run: pnpm test --project=chromium
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}

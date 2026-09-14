@@ -1,382 +1,226 @@
-# Ú Nồ Card Game
+# Ú Nồ Card Game 🎴
 
-> This game was created by me and AI; it is not intended for reference purposes.
+> **A modern, full-stack 3D multiplayer card party game** playable both as a **standalone web application** and directly inside **Discord Voice Channels as a Discord Activity** — from a single unified codebase.
 
-A 3D card party game that runs **as an ordinary website and as a Discord
-Activity from the same build** — one deploy, one URL, no separate client. Play
-the classic deck or the double-sided **Flip** deck, against bots or with up to
-four people in a shared room.
-
-Built with Next.js 16 (App Router), React Three Fiber, and Firebase Realtime
-Database. The rules live in a dependency-free TypeScript package so the same
-engine runs on the server and in the browser.
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16_App_Router-black.svg)](https://nextjs.org/)
+[![NestJS](https://img.shields.io/badge/NestJS-11.x-red.svg)](https://nestjs.com/)
+[![React Three Fiber](https://img.shields.io/badge/R3F-Three.js-white.svg)](https://docs.pmnd.rs/react-three-fiber)
+[![Socket.IO](https://img.shields.io/badge/Socket.IO-4.x-black.svg)](https://socket.io/)
+[![pnpm](https://img.shields.io/badge/pnpm-workspace-orange.svg)](https://pnpm.io/)
 
 ---
 
-## Table of contents
+## 📖 Table of Contents
 
-- [Two ways to play](#two-ways-to-play)
-- [Quick start](#quick-start)
-- [Scripts](#scripts)
-- [Configuration](#configuration)
-- [Project layout](#project-layout)
-- [How it works](#how-it-works)
-- [Themes](#themes)
-- [Replacing sound and music](#replacing-sound-and-music)
-- [Testing](#testing)
-- [Continuous integration](#continuous-integration)
-- [Deployment](#deployment)
-- [Troubleshooting](#troubleshooting)
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [Monorepo Structure](#-monorepo-structure)
+- [Architecture & Tech Stack](#-architecture--tech-stack)
+- [Quick Start](#-quick-start)
+- [Available Scripts](#-available-scripts)
+- [Environment Configuration](#-environment-configuration)
+- [Two Ways to Play](#-two-ways-to-play)
+- [Docker Deployment](#-docker-deployment)
+- [Documentation](#-documentation)
+- [Author & License](#-author--license)
 
 ---
 
-## Two ways to play
+## 🌟 Overview
 
-The app detects its own context at runtime — there is no build flag, no second
-entry point, and no Discord SDK on the critical path. Everything below the
-detection line is identical in both.
+**Ú Nồ** is an interactive 3D adaptation of the beloved card game. It features both the **Classic Deck** and the double-sided **Flip Deck**, playable with up to 4 players (with spectator queueing) or offline against intelligent bots.
 
-| | **Web** | **Discord Activity** |
-| --- | --- | --- |
-| How it opens | Any browser, your own URL | The activity shelf in a voice channel |
-| Detection | default | `frame_id` / `instance_id` in the query string **and** running inside an iframe (`src/lib/discord.ts`) |
-| Finding each other | Share a `?room=CODE` link, or type the 6-character code | A default room code is derived from the voice channel's `instance_id`, so everyone who launches it lands in the same room |
-| Identity | Name and avatar from local settings | Your Discord display name and avatar, via OAuth `identify` (`src/lib/discord.ts` → `/api/discord/token`). The voice channel `instance_id` also becomes the default room code |
-| Refresh / reconnect | Reopen the same link; the seat token in `localStorage` puts you back in your chair | Same |
+The project is structured as a **clean monorepo** utilizing `pnpm workspaces`:
+- **Client**: Next.js 16 with React Three Fiber (Three.js) delivering a smooth 60fps 3D card table.
+- **Server**: NestJS 11 with Socket.IO for low-latency authoritative room management and state broadcasting.
+- **Engine**: A pure TypeScript deterministic game engine with zero external dependencies that runs identically on both server and client.
+- **Gateway**: A lightweight unified reverse proxy routing client assets and WebSocket traffic under a single origin.
 
-Nothing about the rules, networking, rendering or audio differs between the two.
-A Discord Activity is just this site in an iframe that happens to have a room
-code handed to it.
+---
 
-Solo-versus-bots needs neither context nor a server: the engine runs in the tab.
+## 🎮 Key Features
 
-## Quick start
+- **3D Card Table**: Interactive 3D scene built with Three.js / React Three Fiber, featuring dynamic card fanning, accordion spacing for large hands, card flip animations, and table themes (*Café, Meadow, Forest, Park*).
+- **Classic & Flip Decks**:
+  - **Classic**: Traditional 108 cards (+2, Skip, Reverse, Wild, Wild +4).
+  - **Flip**: Double-sided cards featuring **Light** and **Dark** sides with severe action cards (+5, Skip All, Wild Draw Color).
+- **Customizable House Rules**: 7-0 hand swapping/rotating, stacking penalties (+2/+4/+5), jump-in plays out of turn, draw-until-playable, and Ú Nồ rush calls.
+- **Dual Play Modes**:
+  - **Online Multiplayer**: Realtime rooms with invite links, matchmaking, spectators, and reconnection recovery.
+  - **Solo vs Bots**: Zero-latency offline game running directly in the browser tab with no server required.
+- **Discord Activity Native**: Instant voice-channel party play using the Discord Embedded App SDK, with auto-matching channel rooms and OAuth2 avatar/profile sync.
+- **Sound & Music**: Spatial Web Audio API sound effects and ambient music that dynamically muffles and gains reverb when flipping to the Dark side.
+- **Multi-language**: Built-in support for Vietnamese (`vi`) and English (`en`).
 
-**Requirements:** Node.js 20.9+ and pnpm 12.
+---
 
+## 📁 Monorepo Structure
+
+```
+uno-discord-activity-mix/
+├── client/                     # Next.js 16 Web Client & 3D Interface
+│   ├── app/                    # Next.js App Router (pages & API routes)
+│   ├── src/
+│   │   ├── three/              # Three.js 3D scene, Card meshes, layout maths, stage tweening
+│   │   ├── state/              # Zustand stores (match, room, net, settings) & timeline queue
+│   │   ├── ui/                 # 2D HUD, lobby, modales, avatars, settings
+│   │   └── lib/                # Web Audio, themes, Discord SDK helpers
+│   └── public/                 # Card atlases, textures, SFX, and music
+│
+├── server/                     # NestJS 11 Realtime Backend
+│   └── src/
+│       ├── rooms/              # Room lifecycle, matchmaking, presence, gateway
+│       └── app.module.ts       # Main NestJS module
+│
+├── gateway/                    # Node.js HTTP & WebSocket Reverse Proxy
+│   └── index.mjs               # Routes traffic between client (3002) and server (3001)
+│
+├── packages/
+│   ├── game-engine/            # Pure deterministic Uno game logic (reduce, rules, bots)
+│   └── shared/                 # Shared types, DTOs, and Socket.IO event constants
+│
+├── scripts/                    # Automation (version syncing, asset manifests)
+├── .docs/                      # Detailed system & integration documentation
+└── docker-compose.yml          # Containerized deployment
+```
+
+---
+
+## 🛠 Architecture & Tech Stack
+
+```
+                     ┌─────────────────────────────┐
+                     │    Browser / Discord Client │
+                     └──────────────┬──────────────┘
+                                    │ (Single Origin HTTP / WS)
+                                    ▼
+                     ┌─────────────────────────────┐
+                     │    Gateway (Port 3000)      │
+                     └──────┬───────────────┬──────┘
+             Static Assets  │               │ /socket.io & API
+                            ▼               ▼
+           ┌───────────────────────┐ ┌───────────────────────┐
+           │ Next.js Client (3002) │ │  NestJS Backend (3001)│
+           └───────────┬───────────┘ └───────────┬───────────┘
+                       │                         │
+                       └────────────┬────────────┘
+                                    │
+                                    ▼
+                       ┌─────────────────────────┐
+                       │    @u-no/game-engine    │
+                       │      @u-no/shared       │
+                       └─────────────────────────┘
+```
+
+- **Frontend**: Next.js 16, React 19, `@react-three/fiber`, `@react-three/drei`, Three.js, Tailwind CSS, Zustand, Lucide icons.
+- **Backend**: NestJS 11, `@nestjs/websockets`, Socket.IO, TypeScript.
+- **Shared Engine**: Pure functional state reducer `reduce(state, action, now) => { state, events }`.
+- **Packaging & Monorepo**: `pnpm` workspaces with cross-package hot reloading.
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- **Node.js**: `v20.9+`
+- **pnpm**: `v10+` or `v12+`
+
+### 1. Clone & Install
 ```bash
+git clone https://github.com/konnn04/uno-discord-activity-mix.git
+cd uno-discord-activity-mix
 pnpm install
-pnpm dev            # http://localhost:3000
 ```
 
-The game is fully playable offline against bots with no configuration at all —
-the rules engine runs inside the tab. Firebase is only needed for online rooms;
-see [Configuration](#configuration).
-
-## Scripts
-
-| Command | What it does |
-| --- | --- |
-| `pnpm dev` | Development server with hot reload |
-| `pnpm build` | Production build |
-| `pnpm start` | Serve a production build |
-| `pnpm typecheck` | `tsc --noEmit` across app, engine and scripts |
-| `pnpm lint` | ESLint over `src`, `app` and `packages` |
-| `pnpm lint:fix` | Same, with autofix |
-| `pnpm test` | Playwright end-to-end tests (builds and serves automatically) |
-| `pnpm test:ui` | Playwright in interactive UI mode |
-| `pnpm verify` | `typecheck` + `lint` + `build` — run this before pushing |
-| `pnpm sfx` | Rescan `public/sfx/` and regenerate its manifest and docs |
-| `pnpm music` | Rescan `public/music-theme/`, rename files safely, regenerate manifest and docs |
-| `pnpm stamp` | Regenerate the build version stamp from git |
-
-`sfx`, `music` and `stamp` also run automatically via `predev` / `prebuild`, so
-you rarely need to call them by hand.
-
-### Version stamping
-
-Every commit is a distinguishable version without anyone editing a number by
-hand. `scripts/gen-version.mjs` writes `src/generated/version.ts` at build time:
-`major.minor` come from `package.json`, the patch is the commit count, and the
-short SHA is appended — `v0.1.248+9f2c1ab`, plus `.dirty` when the tree has
-uncommitted changes. It is shown in the Settings panel, so a bug report only
-needs that one line.
-
-The commit count is used rather than a git hook that bumps a number: a hook only
-runs on machines that installed it, so the moment someone forgets, numbers
-diverge between laptops and CI. Counting commits gives everyone the same answer
-for the same commit. The generated file is gitignored — it changes every commit
-and would conflict on every merge.
-
-## Configuration
-
-Copy `.env.example` to `.env` if present, or create `.env` with:
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `NEXT_PUBLIC_FIREBASE_DATABASE_URL` | for online play | Realtime Database URL the browser subscribes to |
-| `FIREBASE_DATABASE_URL` | for online play | Same URL for the server; falls back to the public one |
-| `FIREBASE_SERVICE_ACCOUNT_KEY` | for online play | Service account as raw JSON, base64, **or** a path to a key file |
-| `NEXT_PUBLIC_FIREBASE_API_KEY`, `..._PROJECT_ID` | optional | Used to detect whether a browser Firebase client can be created |
-| `NEXT_PUBLIC_SITE_URL` | for deployment | Public origin. Share links, `sitemap.xml` and the Open Graph image resolve against it; defaults to `localhost:3000` |
-
-Without these the app still runs: online buttons fall back to snapshot polling,
-and solo-versus-bots is unaffected.
-
-> `FIREBASE_SERVICE_ACCOUNT_KEY` accepts a filesystem path, which the bundler
-> cannot trace at build time. That call is explicitly opted out of tracing — see
-> the comment in `src/server/firebaseAdmin.ts` for why leaving it in drags the
-> whole `public/` folder (~86 MB of audio and card art) into the server bundle.
-
-## Project layout
-
+### 2. Environment Setup
+Copy the template configuration:
+```bash
+cp .env.example .env
 ```
-app/                 Next.js routes — the game page, the room API, /legal/*
-packages/
-  game-engine/       Pure TypeScript rules. No DOM, no network, deterministic.
-src/
-  config.ts          Tunable numbers: bot think time, poll rates, toast/celebration ms
-  state/             Zustand stores, the animation queue, networking, clocks
-  three/             React Three Fiber scene, card meshes, layout maths
-  ui/                HUD, lobby, menus, settings, tutorial
-  lib/               Audio, settings, themes, i18n helpers
-public/
-  card-texture/      Card art atlases (.jpg) plus their sprite maps (.json)
-  sfx/               Optional sound replacements — see the README in there
-  music-theme/       Background music — see the README in there
-scripts/             Build-time asset scanners
-tests/               Playwright end-to-end specs
+*(For local standalone play, default `.env` values work out of the box).*
+
+### 3. Start Development Servers
+```bash
+# Starts client, server, and gateway concurrently
+pnpm dev
 ```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## How it works
+---
 
-### The rules are a pure function
+## 📜 Available Scripts
 
-`packages/game-engine` exposes `reduce(state, action, now) -> { state, events }`.
-It has no imports outside itself, uses a seeded PRNG, and never touches the DOM
-or the network. That is what lets the server be authoritative for online rooms
-while the same code runs locally for bot games — and it makes the rules testable
-by simulating thousands of games in a plain Node script.
+Run from the root directory:
 
-### Animations drive the clock, not the other way round
+| Script | Command | Description |
+| :--- | :--- | :--- |
+| `pnpm dev` | Full Dev Stack | Runs Server, Client, and Gateway concurrently with live reload. |
+| `pnpm dev:client` | Client Only | Runs the Next.js frontend dev server. |
+| `pnpm dev:server` | Server Only | Runs the NestJS backend dev server. |
+| `pnpm dev:gateway`| Gateway Only | Runs the reverse proxy gateway. |
+| `pnpm build` | Production Build | Builds `@u-no/game-engine`, `@u-no/shared`, server, and client. |
+| `pnpm typecheck` | Type Checking | Executes `tsc --noEmit` across all workspace packages. |
+| `pnpm lint` | Code Linting | Runs ESLint across all packages and services. |
+| `pnpm sync:version`| Sync Version | Synchronizes Git SHA, commit count, and version metadata across packages. |
 
-The engine resolves a whole move instantly, but the player must see it happen in
-order. So the client never renders engine state directly. Each engine step is
-pushed onto a queue, and `src/state/match.ts` commits one step at a time,
-waiting for its animation to finish before committing the next:
+---
 
-```
-Create event → build animation → animation completes → commit state → next phase
-```
+## ⚙️ Environment Configuration
 
-Every turn is therefore split into three phases, and the clock only runs during
-the middle one:
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `PORT` | Public port exposed by Gateway | `3000` |
+| `SERVER_PORT` | Port for the NestJS backend | `3001` |
+| `CLIENT_PORT` | Port for the Next.js frontend | `3002` |
+| `INTERNAL_SERVER_URL`| Internal URL gateway proxies backend to | `http://localhost:3001` |
+| `APP_URL` / `NEXT_PUBLIC_SITE_URL` | Public origin URL for invites & Discord | `http://localhost:3000` |
+| `NEXT_PUBLIC_DISCORD_CLIENT_ID` | Discord Application Client ID | (Optional for web) |
+| `DISCORD_CLIENT_SECRET` | Discord Application Client Secret | (Optional for web) |
 
-| Phase | What happens | Clock | Input |
-| --- | --- | --- | --- |
-| `start` | Effects landing on you: skip icon, penalty draws, a table flip | paused | locked |
-| `action` | Your actual turn | running | free |
-| `end` | The consequence of the card you just played | paused | locked |
+---
 
-Animation lengths live in one place (`src/state/timeline.ts`) and are imported
-by the code that creates the tweens, so the pacing budget and the real animation
-cannot drift apart.
+## 🌐 Two Ways to Play
 
-### Anti-cheat
+| Capability | Standard Web App | Discord Voice Activity |
+| :--- | :--- | :--- |
+| **Launch Method** | Direct URL or invite link | Activity shelf inside Discord Voice Channel |
+| **Room Discovery**| Share 6-character room codes or `?room=CODE` links | Automatically creates/joins room matching `instance_id` |
+| **User Identity** | Local name and custom/preset avatar | Discord Username and Avatar via OAuth2 token exchange |
+| **Networking** | Socket.IO via Gateway reverse proxy | Same (works securely within Discord iframe sandbox) |
 
-Opponents' hands and the draw pile are masked server-side before broadcast; your
-own cards arrive on a private channel.
+---
 
-The Flip deck is a deliberate, rule-driven exception. A Flip card has two real
-faces, and **the face turned away from you is public information at a real
-table** — deciding whether to flip is the whole strategic layer of the game, and
-it only works if you can see what everyone will be holding afterwards. So
-`maskCard` blanks only the **active** face and leaves the other one intact, for
-opponents' hands and for the top of the draw pile alike. You still cannot see
-what anyone can play *right now*; you can see what they will hold after a flip,
-exactly as at a physical table.
+## 🐳 Docker Deployment
 
-This is not a hole in the masking, it is the masking being side-aware. The
-classic deck has one face, so it is blanked outright.
-
-## Themes
-
-One theme drives both the menu backdrop and the 3D table, so they can never
-disagree: `src/lib/themes.ts` holds four of them (`cafe` — the default —
-`meadow`, `forest`, `park`), each declaring a menu palette and a table palette.
-The backdrops are pure CSS (`src/ui/Backdrop.tsx`): the menu deliberately never
-creates a WebGL context, so its background is not allowed to need one either.
-
-Adding a theme is one entry in that array plus one scene component and four
-label strings — nothing else needs to know the list.
-
-In an online room the theme is **the host's**. It is frozen into the room record
-when the host presses start (not when they change the setting, which they may do
-several times in the lobby), so everyone — including someone who joins mid-match
-— sees the same table.
-
-## Replacing sound and music
-
-Both are drop-in. Put a file in the folder, run the matching script (or just
-build), and it is picked up:
-
-- **Sound effects** — `public/sfx/README.md` lists every sound name, what it is
-  used for, and which file currently overrides it. Anything you do not provide
-  is synthesised with WebAudio, so the game is never silent.
-- **Music** — `public/music-theme/README.md`. Files are renamed to safe ASCII
-  slugs automatically (original names are kept as display titles in the
-  manifest), because characters like `｜ ’ é` break differently at each layer of
-  URL encoding.
-
-On the Flip deck's dark side the music is filtered and drenched in reverb, using
-only native WebAudio nodes — no extra dependency.
-
-## Testing
+The project includes a production-ready `docker-compose.yml`:
 
 ```bash
-pnpm test                      # all projects
-pnpm test --project=chromium   # one browser
-pnpm test:ui                   # interactive
+docker compose up -d --build
 ```
 
-Playwright builds the app and serves it on port **3100** automatically, so the
-suite never collides with a `pnpm dev` you have open on 3000. Override with
-`PORT` or `BASE_URL`.
+This starts:
+1. `uno-gateway` on port `3000`.
+2. `uno-server` on internal port `3001`.
+3. `uno-client` on internal port `3002`.
 
-The rules engine is also exercised by writing short simulation scripts that
-bundle `packages/game-engine` with esbuild and play thousands of bot games,
-asserting invariants (nobody ends with zero points, the Ú Nồ window always
-points at a player actually holding one card, no round deadlocks). These are
-written per investigation rather than committed as a suite.
+For Discord Activities, point your domain (e.g. via Cloudflare Tunnel or reverse proxy) to port `3000` over HTTPS.
 
-## Continuous integration
+---
 
-`.github/workflows/ci.yml` runs on every push and pull request:
+## 📚 Documentation
 
-1. **verify** — `typecheck`, `lint`, `build`. The build also regenerates the
-   audio and music manifests, so this catches breakage in those scripts too.
-2. **e2e** — Playwright on Chromium, gated behind `verify`. The HTML report is
-   uploaded as an artifact on both success and failure.
+For in-depth technical guides, explore the [`.docs/`](./.docs/) directory:
+- [`.docs/ARCHITECTURE.md`](./.docs/ARCHITECTURE.md) — Detailed architecture, data flow, and networking protocol.
+- [`.docs/DISCORD_ACTIVITY.md`](./.docs/DISCORD_ACTIVITY.md) — Complete guide to registering and deploying on Discord.
+- [`.docs/GAME_ENGINE.md`](./.docs/GAME_ENGINE.md) — Card deck breakdowns, game mechanics, and action specifications.
 
-Concurrent runs on the same ref are cancelled, so pushing several commits in a
-row only keeps the newest run.
+---
 
-## Deployment
+## 👤 Author & Acknowledgments
 
-One build serves both targets. Deploy once, then optionally point Discord at the
-same URL.
+Developed with ❤️ by **Thanh Trieu Nguyen (Konnn04)**.
+- **GitHub**: [@konnn04](https://github.com/konnn04)
+- **Email**: [trieukon1011@gmail.com](mailto:trieukon1011@gmail.com)
 
-### With Docker (own host)
-
-```bash
-cp .env.example .env          # fill in real values
-GIT_SHA=$(git rev-parse --short=7 HEAD) GIT_COUNT=$(git rev-list --count HEAD) docker compose up -d --build
-```
-
-Multi-stage build on `output: 'standalone'` — the runtime image carries a ~29MB
-server plus `public/` and no `node_modules`. It listens on `127.0.0.1:3000`; put
-your own reverse proxy in front for TLS (a Discord Activity requires HTTPS).
-
-Two things that will bite you if you edit `docker-compose.yml`:
-
-- **`NEXT_PUBLIC_*` must stay under `build.args`, not `environment`.** Those
-  values are inlined into the browser bundle at build time. Declared under
-  `environment` they arrive far too late, the bundle ships empty strings, and
-  online play silently does nothing — while the menu still loads, so it reads
-  as an unrelated bug.
-- **Keep it at one replica.** Room step timers, fallback locks and caches are
-  per-process in-memory state. Two replicas each schedule their own timers for
-  the same room: not corrupting (Firebase holds the lock) but duplicated work
-  and much harder to debug. Scaling out means moving the timers out of process
-  first.
-
-### On Vercel
-
-Works out of the box, with **one setting that matters more than everything else
-put together**: `vercel.json` pins functions to `sin1`, next to the Firebase
-Realtime Database in `asia-southeast1`.
-
-A single player action makes five database round trips — take the lock, read the
-room, write the room, broadcast, release the lock. From Vercel's default `iad1`
-those cross the Pacific at ~220ms each: **~1.1s per move**, with the room lock
-held the whole time, while `withLock` only retries for ~1.2s before throwing
-`room-busy`. Two people acting close together collide immediately. From `sin1`
-the same five trips cost ~60ms.
-
-**Change that region if the database moves.** Pick the Vercel region nearest the
-*database*, not the players — players only fetch static assets, which the CDN
-already handles, but every move has to reach the database.
-
-`vercel.json` is deliberately two lines: Vercel validates it against a strict
-schema and **rejects any key it does not recognise**, including `_comment`-style
-keys, so the reasoning has to live here instead of next to the value. Do not
-delete `regions` thinking it is decoration.
-
-On the Hobby plan only one region is allowed. If a deploy complains about the
-region, set it instead at *Project Settings → Functions → Function Region*.
-
-Two more Vercel specifics:
-
-- `FIREBASE_SERVICE_ACCOUNT_KEY` accepts a service account as **raw JSON or
-  base64**, or a **legacy Realtime Database secret** (a ~40-character token —
-  `firebaseAdmin.ts` detects which it got and switches between the Admin SDK and
-  the REST API accordingly). What it cannot be on Vercel is a **file path**:
-  there is no filesystem to mount a key into.
-- The server's own `setTimeout` room stepper is disabled on serverless (it can
-  never fire once the response is sent). The match is driven entirely by the
-  client heartbeat at `/api/rooms/[code]/step` — see
-  [How it works](#how-it-works).
-
-### As a website
-
-Any Node host that runs `next build` / `next start` works.
-Set `NEXT_PUBLIC_SITE_URL` so share links, `sitemap.xml` and the Open Graph
-preview point at the real domain instead of `localhost`.
-
-That is the whole deployment. Players share `?room=CODE` links; reopening one
-after a refresh reconnects to the same seat using the token in `localStorage`.
-
-### Also as a Discord Activity
-
-Serve the same deployment over HTTPS and add a URL mapping in the Developer
-Portal. Nothing in the build changes — the app notices it is embedded and
-derives a default room code from the voice channel's `instance_id`, so everyone
-who launches the activity lands in the same room without typing a code.
-
-In the portal you only need the URL mapping:
-
-- **Interactions Endpoint URL** — leave blank. It is for receiving slash
-  commands over HTTP; an Activity never uses it, and a wrong value fails
-  Discord's signed-PING check when you try to save.
-- **Linked Roles Verification URL** — leave blank. OAuth linked roles, unused.
-- **Terms of Service** / **Privacy Policy** — optional until you submit for
-  verification. Served at `/legal/terms` and `/legal/privacy`.
-
-**Map the Firebase host too, if you want realtime online play.** Discord blocks
-requests to origins you have not mapped, and the browser talks to Realtime
-Database directly over a WebSocket — so add a mapping for the host in
-`NEXT_PUBLIC_FIREBASE_DATABASE_URL` (`<project>.firebasedatabase.app` or
-`<project>.firebaseio.com`). Without it the app is not broken, it just falls
-back to polling its own `/api` routes: rooms still work, they update a little
-slower. Everything else — fonts, card art, audio — is served from your own
-origin, so there is nothing else to map.
-
-## Troubleshooting
-
-**A sound I dropped in is not playing.** Run `pnpm sfx` and check the table at
-the bottom of `public/sfx/README.md` — it shows the exact file picked for each
-name. If the name is right but you still hear the synthesised version, open the
-console: a file that fails to decode logs a warning naming it.
-
-**No music.** Music starts on the first click or key press — browsers block
-audio before a user gesture. Check that `public/music-theme/manifest.json` is
-not empty.
-
-**Cards render as flat dark rectangles.** That is the placeholder material,
-which should only ever show for the few hundred ms before the atlas finishes
-loading. Seeing it mid-match means a sprite lookup missed: confirm the atlas
-`.json` next to the `.jpg` contains the name being requested. Note the Flip dark
-atlas deliberately has no `back_side` — in Flip a card's back *is* its other
-real face — so anything asking for one there falls back to the light atlas.
-
-**The Discord Activity shows a blank frame.** Check that the URL mapping points
-at an HTTPS origin that actually serves the app, then open the activity's
-devtools — a blank frame is almost always a blocked request to an origin you
-have not mapped.
-
-**Inside Discord the game works but rooms update slowly.** The Firebase host is
-not mapped, so the realtime WebSocket is blocked and the app fell back to
-polling its own API. See [Deployment](#deployment).
-
-**Online rooms do nothing.** Firebase is not configured — see
-[Configuration](#configuration). The UI falls back to polling and will say so.
+Distributed under the **MIT License**.

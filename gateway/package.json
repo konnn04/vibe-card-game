@@ -1,0 +1,21 @@
+{
+  "name": "@u-no/gateway",
+  "version": "1.0.15",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node index.mjs",
+    "start": "node index.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  },
+  "author": {
+    "name": "Konnn04",
+    "username": "konnn04",
+    "email": "trieukon1011@gmail.com",
+    "url": "https://github.com/konnn04"
+  }
+}

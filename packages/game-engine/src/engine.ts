@@ -491,10 +491,10 @@ function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, e
         const amount = s.pending.amount;
         s.pending = null;
         events.push({ t: 'skip', playerId: s.players[victim].id });
-        // Nạn nhân rút TỪNG LÁ (endsTurn -> rút xong tự nhảy qua họ), thay vì
-        // nhận cả cục trong 1 nhịp. setTurn phải gọi TRƯỚC vì nó xoá drawRun.
-        setTurn(s, victim, now, events, PLAY_ANIM_MS + SKIP_ANIM_MS, 'effect');
-        s.drawRun = { kind: 'fixed', remaining: amount, count: 0, penalty: true, endsTurn: true };
+        // Nạn nhân nhận trọn gói toàn bộ số lá phạt đã biết trước trong 1 nhịp dồn
+        give(s, victim, amount, true, events, true);
+        const animBudget = PLAY_ANIM_MS + SKIP_ANIM_MS + Math.min((amount - 1) * 75 + 260 + 250, 3000);
+        setTurn(s, step(s, victim), now, events, animBudget, 'effect');
       }
       return;
     }
@@ -575,8 +575,14 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
 
       // jump-in: cướp lượt về người đánh chen
       if (jump) s.turn = pi;
-      // hết cửa sổ bắt RUSH của chính người này
-      if (s.rushWindow && s.rushWindow.playerId === s.players[pi].id) s.rushWindow = null;
+      // Khi lượt này đánh bài: nếu lượt trước có ai chưa bị bắt Ú Nồ, họ an toàn
+      if (s.rushWindow) {
+        if (s.rushWindow.playerId !== s.players[pi].id) {
+          const prevPi = idx(s, s.rushWindow.playerId);
+          if (prevPi >= 0) s.players[prevPi].calledRush = true;
+        }
+        s.rushWindow = null;
+      }
 
       s.players[pi].hand.splice(ci, 1);
       s.discard.push(card);
@@ -696,19 +702,28 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       const pi = idx(s, action.playerId);
       if (pi < 0 || s.turn !== pi || s.phase !== 'awaitPlay') return reject(prev, action.playerId, 'not-your-turn');
 
+      // Khi người này bắt đầu rút bài: nếu lượt trước có ai chưa bị bắt Ú Nồ, họ an toàn
+      if (s.rushWindow && s.rushWindow.playerId !== action.playerId) {
+        const prevPi = idx(s, s.rushWindow.playerId);
+        if (prevPi >= 0) s.players[prevPi].calledRush = true;
+        s.rushWindow = null;
+      }
+
       // Đang rút dở -> action này chỉ lấy THÊM 1 LÁ nữa.
       if (s.drawRun) return drawStep(s, pi, now, events);
 
       if (s.pending) {
-        // Nhận chuỗi phạt đang treo rồi mất lượt. Số cố định (+N) rút đủ N lá;
-        // Wild Draw Color rút tới khi lộ đúng màu bị gọi. Cả hai đều đi qua
-        // drawRun -> từng lá một.
         const p = s.pending;
         s.pending = null;
-        s.drawRun = p.value === 'drawColor'
-          ? { kind: 'color', color: p.color, count: 0, penalty: true, endsTurn: true }
-          : { kind: 'fixed', remaining: p.amount, count: 0, penalty: true, endsTurn: true };
-        return drawStep(s, pi, now, events);
+        if (p.value === 'drawColor') {
+          s.drawRun = { kind: 'color', color: p.color, count: 0, penalty: true, endsTurn: true };
+          return drawStep(s, pi, now, events);
+        }
+        // Chuỗi phạt đã biết trước số lượng (+2, +4, stack): rút dồn nhanh 1 nhịp
+        give(s, pi, p.amount, true, events, true);
+        const animBudget = Math.min((p.amount - 1) * 75 + 260 + 250, 3000);
+        setTurn(s, step(s, pi), now, events, animBudget, 'effect');
+        return { state: s, events };
       }
       if (s.drawnThisTurn) return reject(prev, action.playerId, 'already-drawn');
 
@@ -729,6 +744,12 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       const pi = idx(s, action.playerId);
       if (pi < 0 || s.turn !== pi || !s.drawnThisTurn) return reject(prev, action.playerId, 'cannot-pass');
       if (s.drawRun) return reject(prev, action.playerId, 'drawing');
+
+      if (s.rushWindow && s.rushWindow.playerId !== action.playerId) {
+        const prevPi = idx(s, s.rushWindow.playerId);
+        if (prevPi >= 0) s.players[prevPi].calledRush = true;
+        s.rushWindow = null;
+      }
       // Luật nhà "bắt buộc đánh": còn lá đánh được thì không được bỏ lượt.
       if (s.rules.forcePlay && s.players[pi].hand.some((c) => canPlay(c, s)))
         return reject(prev, action.playerId, 'must-play');
@@ -764,10 +785,12 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
         award(s, action.playerId, ACTION_POINTS.challenge);
         give(s, ti, amount, true, events, true);
         // Người bắt đúng vẫn đang ở lượt mình -> cấp lại lượt cho CHÍNH HỌ.
-        setTurn(s, pi, now, events, CHALLENGE_ANIM_MS, 'effect');
+        const animBudget = CHALLENGE_ANIM_MS + Math.min((amount - 1) * 75 + 260 + 250, 3000);
+        setTurn(s, pi, now, events, animBudget, 'effect');
       } else {
         give(s, pi, amount + 2, true, events, true);
-        setTurn(s, step(s, pi), now, events, CHALLENGE_ANIM_MS, 'effect');
+        const animBudget = CHALLENGE_ANIM_MS + Math.min((amount + 1) * 75 + 260 + 250, 3000);
+        setTurn(s, step(s, pi), now, events, animBudget, 'effect');
       }
       return { state: s, events };
     }

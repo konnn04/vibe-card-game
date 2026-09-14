@@ -1,0 +1,29 @@
+{
+  "name": "@u-no/shared",
+  "version": "1.0.15",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@u-no/game-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  },
+  "author": {
+    "name": "Konnn04",
+    "username": "konnn04",
+    "email": "trieukon1011@gmail.com",
+    "url": "https://github.com/konnn04"
+  }
+}
