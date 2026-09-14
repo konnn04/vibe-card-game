@@ -1,6 +1,7 @@
 # Thư mục nặng / sinh ra lúc build — không đưa vào context gửi cho Docker.
 node_modules
 .next
+dist
 .git
 test-results
 playwright-report
