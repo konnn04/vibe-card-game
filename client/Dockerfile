@@ -6,6 +6,7 @@ RUN corepack enable && corepack prepare pnpm@12.3.4 --activate
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ ./packages/
+COPY scripts/ ./scripts/
 COPY client/ ./client/
 COPY server/package.json ./server/
 COPY gateway/package.json ./gateway/
@@ -18,8 +19,8 @@ ENV NEXT_PUBLIC_DISCORD_CLIENT_ID=${NEXT_PUBLIC_DISCORD_CLIENT_ID}
 ENV NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL}
 
 RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @u-no/game-engine build
 RUN pnpm --filter @u-no/shared build
-RUN pnpm --filter @u-no/game-engine build || true
 RUN pnpm --filter @u-no/client build
 
 FROM node:20-alpine AS runner
