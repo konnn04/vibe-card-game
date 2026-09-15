@@ -43,6 +43,8 @@ const vi = {
     bot: 'Bot',
     addBot: 'Thêm bot',
     rotated: '{name} ra ghế chờ, {next} vào thay',
+    roomFull: 'Phòng đã đầy (tối đa 8 người bao gồm bàn chơi và hàng chờ)!',
+    roomNotFound: 'Không tìm thấy phòng hoặc mã phòng không tồn tại!',
   },
   rules: {
     title: 'Luật chơi',
@@ -129,6 +131,13 @@ const vi = {
     queueWait: 'Chờ vào bàn ván sau',
     darkSide: 'MẶT DARK',
     lightSide: 'MẶT LIGHT',
+    challengeSuccess: 'BẮT LỖI THÀNH CÔNG!',
+    challengeSuccessMe: 'Bạn bị phạt rút bài!',
+    challengeSuccessTarget: '{name} bị phạt rút bài!',
+    challengeFail: 'BẮT LỖI THẤT BẠI!',
+    challengeFailMe: 'Bạn bị phạt +6 lá!',
+    challengeFailTarget: '{name} bị phạt +6 lá!',
+    challengeFoundCard: 'Lá bài của {name}',
   },
   settings: {
     musicTrack: "NHẠC NỀN",

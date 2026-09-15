@@ -4,13 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { face, mulberry32, type Card, type DeckType } from '@u-no/game-engine';
 import { useMatch, type FxItem } from '@/src/state/match';
-import { useAvatarLookup, useRoom } from '@/src/state/room';
-import { seatsAfterRotation } from '@/src/lib/rotation';
 import { COLOR_HEX } from '@/src/three/atlas';
 import { gfxOf, useSettings } from '@/src/lib/settings';
-import { musicFlourish } from '@/src/lib/audio';
-import { Avatar } from './Avatar';
-import { UI } from '@/src/config';
 import { CardPhoto, type AtlasId } from './CardPhoto';
 import { resolvePhotoSprite, type AtlasVariant } from '@/src/three/photoAtlas';
 
@@ -44,12 +39,38 @@ function RushMoment({ name }: { name: string }) {
           className="display text-[17vmin] leading-[.86] tracking-[-.03em] text-[#FFD34D]"
           style={{ textShadow: '0 10px 0 #A8460B, 0 16px 40px rgba(0,0,0,.5)' }}
         >
-          Ú NỒ!!!
+          {t('rush')}!
         </div>
         <div className="label mt-3 inline-block rounded-lg bg-white/70 px-5 py-1.5 text-[16px] tracking-[.4em] text-[#3A0E06]">
           {t('rushOne', { name })}
         </div>
       </motion.div>
+    </motion.div>
+  );
+}
+
+function Burst({ text, sub, color }: { text: string; sub?: string; color: string }) {
+  return (
+    <motion.div
+      className="pointer-events-none absolute inset-0 z-30 grid place-items-center"
+      initial={{ scale: 0.6, opacity: 0, rotate: -4 }}
+      animate={{ scale: [0.6, 1.1, 1], opacity: [0, 1, 1], rotate: [-4, 2, 0] }}
+      exit={{ scale: 1.2, opacity: 0 }}
+      transition={{ duration: 0.4, times: [0, 0.4, 1] }}
+    >
+      <div className="flex flex-col items-center">
+        <div
+          className="display text-3xl sm:text-4xl font-black uppercase tracking-wide text-center"
+          style={{ color, textShadow: '0 4px 16px rgba(0,0,0,0.85), 0 0 25px currentColor' }}
+        >
+          {text}
+        </div>
+        {sub && (
+          <div className="mt-2 rounded-full bg-black/85 px-4 py-1 text-xs sm:text-sm font-semibold text-white/95 border border-white/20 shadow-xl backdrop-blur-md">
+            {sub}
+          </div>
+        )}
+      </div>
     </motion.div>
   );
 }
@@ -61,8 +82,12 @@ function ChallengeMoment({
   isTarget,
   success,
   revealedCard,
+  targetId,
+  myId,
+  players,
   side = 'light',
   deckType = 'classic',
+  onDismiss,
 }: {
   challengerName: string;
   targetName: string;
@@ -70,29 +95,52 @@ function ChallengeMoment({
   isTarget: boolean;
   success: boolean;
   revealedCard?: Card;
+  targetId: string;
+  myId: string;
+  players: { id: string }[];
   side?: 'light' | 'dark';
   deckType?: DeckType;
+  onDismiss?: () => void;
 }) {
-  const iWon = isChallenger ? success : isTarget ? !success : false;
-  const iLost = isChallenger ? !success : isTarget ? success : false;
+  const t = useTranslations('game');
+  const [visible, setVisible] = useState(true);
 
-  const [flipped, setFlipped] = useState(false);
-  const [showResult, setShowResult] = useState(!revealedCard);
+  const duration = revealedCard ? 1700 : 1200;
 
   useEffect(() => {
-    if (!revealedCard) return;
-    // 150ms: Lật lá bài lên cho cả bàn xem
-    const t1 = setTimeout(() => setFlipped(true), 150);
-    // 1450ms: Úp lá bài lại
-    const t2 = setTimeout(() => setFlipped(false), 1450);
-    // 1750ms: Hiện kết quả báo thua
-    const t3 = setTimeout(() => setShowResult(true), 1750);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
-  }, [revealedCard]);
+    const timer = setTimeout(() => {
+      setVisible(false);
+      onDismiss?.();
+    }, duration);
+    return () => clearTimeout(timer);
+  }, [duration, onDismiss]);
+
+  if (!visible) return null;
+
+  // Người bị challenge thua chữ đỏ, ngược lại chữ xanh.
+  // Người đi challenge thắng chữ xanh, ngược lại chữ đỏ.
+  const iLost = isTarget ? success : isChallenger ? !success : false;
+  const iWon = isTarget ? !success : isChallenger ? success : false;
+  const color = iLost ? '#F87171' : iWon ? '#34D399' : success ? '#34D399' : '#F87171';
+
+  const text = success ? t('challengeSuccess') : t('challengeFail');
+  const sub = success
+    ? (isTarget ? t('challengeSuccessMe') : t('challengeSuccessTarget', { name: targetName }))
+    : (isChallenger ? t('challengeFailMe') : t('challengeFailTarget', { name: challengerName }));
+
+  // Tính tọa độ tay bài của người bị challenge trên màn hình
+  const targetIdx = players.findIndex((p) => p.id === targetId);
+  const myIdx = players.findIndex((p) => p.id === myId);
+  const n = players.length || 4;
+  const seatJ = targetIdx >= 0 && myIdx >= 0 ? ((targetIdx - myIdx) % n + n) % n : 0;
+  const angle = (seatJ * Math.PI * 2) / n;
+  const startX = -Math.sin(angle) * 320;
+  const startY = Math.cos(angle) * 220;
+
+  // Nếu là bản thân: nhô lên ngay trên quạt bài của mình ở cạnh dưới màn hình
+  // Nếu là đối thủ: nhô lên ngay tại tay bài của đối thủ đó trên bàn
+  const posX = seatJ === 0 ? 0 : startX;
+  const posY = seatJ === 0 ? 140 : (startY - 20);
 
   const cardFace = revealedCard ? face(revealedCard, side) : null;
   const atlasVariant: AtlasVariant = deckType === 'flip'
@@ -103,177 +151,105 @@ function ChallengeMoment({
     : null;
   const atlasId: AtlasId = atlasVariant;
 
-  let title = '';
-  let sub = '';
-  let titleColor = '#FFD34D';
-
-  if (isChallenger) {
-    if (success) {
-      title = 'BẮT LỖI THÀNH CÔNG!';
-      sub = `${targetName} đã giấu màu! Đối thủ bị phạt rút bài!`;
-      titleColor = '#34D399';
-    } else {
-      title = 'BẮT LỖI THẤT BẠI!';
-      sub = `${targetName} đánh đúng luật! Bạn bị phạt rút 6 lá!`;
-      titleColor = '#F87171';
-    }
-  } else if (isTarget) {
-    if (success) {
-      title = 'BỊ BẮT LỖI GIAN LẬN!';
-      sub = `Bạn bị ${challengerName} bắt quả tang còn lá cùng màu! Bị phạt rút bài!`;
-      titleColor = '#F87171';
-    } else {
-      title = 'BẢO VỆ THÀNH CÔNG!';
-      sub = `Bạn đánh hoàn toàn hợp lệ! ${challengerName} bị phạt rút 6 lá!`;
-      titleColor = '#34D399';
-    }
-  } else {
-    if (success) {
-      title = `${challengerName} BẮT LỖI THÀNH CÔNG!`;
-      sub = `${targetName} đã gian lận màu và phải nhận phạt!`;
-      titleColor = '#FBBF24';
-    } else {
-      title = `${challengerName} BẮT LỖI THẤT BẠI!`;
-      sub = `${targetName} đánh đúng luật! ${challengerName} bị phạt 6 lá!`;
-      titleColor = '#F87171';
-    }
-  }
-
   return (
     <motion.div
-      className="pointer-events-none absolute inset-0 z-40 grid place-items-center overflow-hidden"
+      className="pointer-events-none absolute inset-0 z-30 grid place-items-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
     >
-      <div
-        className="absolute inset-0"
-        style={{
-          background: showResult
-            ? iWon
-              ? 'radial-gradient(ellipse at center, rgba(16,185,129,0.35) 0%, rgba(0,0,0,0.7) 80%)'
-              : iLost
-                ? 'radial-gradient(ellipse at center, rgba(239,68,68,0.4) 0%, rgba(0,0,0,0.75) 80%)'
-                : 'radial-gradient(ellipse at center, rgba(245,158,11,0.25) 0%, rgba(0,0,0,0.65) 80%)'
-            : 'radial-gradient(ellipse at center, rgba(30,12,20,0.5) 0%, rgba(0,0,0,0.85) 85%)',
-        }}
-      />
+      <motion.div
+        className="relative flex flex-col items-center"
+        initial={
+          revealedCard
+            ? { x: posX, y: posY + (seatJ === 0 ? 80 : 35), scale: 0.7, opacity: 0 }
+            : { x: posX, y: posY, scale: 0.8, opacity: 0 }
+        }
+        animate={{ x: posX, y: posY, scale: 1, opacity: 1 }}
+        exit={
+          revealedCard
+            ? { x: posX, y: posY + (seatJ === 0 ? 80 : 35), scale: 0.7, opacity: 0 }
+            : { x: posX, y: posY, scale: 0.8, opacity: 0 }
+        }
+        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {revealedCard && (
+          <div className="flex flex-col items-center mb-2.5">
+            <div className="mb-1 rounded-full bg-black/85 px-3 py-0.5 text-xs font-bold text-amber-300 border border-amber-300/40 shadow-xl backdrop-blur-md">
+              {t('challengeFoundCard', { name: targetName })}
+            </div>
 
-      {/* Giai đoạn 1: Nếu người bị bắt lỗi CÓ LÁ THỎA -> Lật lá bài lên cho cả bàn xem rồi úp lại */}
-      {revealedCard && !showResult && (
-        <motion.div
-          className="relative flex flex-col items-center text-center px-4"
-          initial={{ scale: 0.3, y: 30, opacity: 0 }}
-          animate={{ scale: 1, y: 0, opacity: 1 }}
-          exit={{ scale: 0.7, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 320, damping: 22 }}
-        >
-          <div className="mb-3 rounded-full bg-black/85 px-4 py-1.5 text-xs sm:text-sm font-bold tracking-wide text-amber-300 border border-amber-300/40 shadow-xl backdrop-blur-md">
-            🔍 KIỂM TRA TAY BÀI CỦA {targetName.toUpperCase()}
-          </div>
-
-          {/* 3D Flip Card Container */}
-          <div
-            className="relative"
-            style={{
-              perspective: 1000,
-              width: 125,
-              height: 190,
-            }}
-          >
-            <motion.div
-              className="w-full h-full relative"
-              animate={{ rotateY: flipped ? 0 : 180 }}
-              transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+            {/* Thẻ bài xoay lật 3D tại chỗ từ lưng bài sang mặt bài để cho mọi người xem */}
+            <div
+              className="relative"
               style={{
-                transformStyle: 'preserve-3d',
+                perspective: 800,
+                width: 95,
+                height: 145,
               }}
             >
-              {/* Mặt ngửa (hiển thị lá bài cùng màu bị phát hiện) */}
-              <div
-                className="absolute inset-0 rounded-xl overflow-hidden shadow-2xl border-2 border-amber-300/80"
-                style={{
-                  backfaceVisibility: 'hidden',
-                  WebkitBackfaceVisibility: 'hidden',
-                  boxShadow: '0 0 35px rgba(255, 211, 77, 0.6), 0 10px 30px rgba(0,0,0,0.8)',
-                }}
+              <motion.div
+                className="w-full h-full relative"
+                initial={{ rotateY: 180 }}
+                animate={{ rotateY: 0 }}
+                exit={{ rotateY: 180 }}
+                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                style={{ transformStyle: 'preserve-3d' }}
               >
-                {spriteName ? (
-                  <CardPhoto atlas={atlasId} name={spriteName} height={190} />
-                ) : (
-                  <div className="w-full h-full grid place-items-center bg-slate-800 text-white font-bold p-2 text-center text-sm">
-                    {cardFace ? `${cardFace.value} ${cardFace.color}` : 'Card'}
-                  </div>
-                )}
-              </div>
+                {/* Mặt ngửa (lá bài vi phạm) */}
+                <div
+                  className="absolute inset-0 rounded-xl overflow-hidden shadow-2xl border-2 border-amber-300/80"
+                  style={{
+                    backfaceVisibility: 'hidden',
+                    WebkitBackfaceVisibility: 'hidden',
+                    boxShadow: '0 0 25px rgba(255, 211, 77, 0.6), 0 8px 24px rgba(0,0,0,0.85)',
+                  }}
+                >
+                  {spriteName ? (
+                    <CardPhoto atlas={atlasId} name={spriteName} height={145} />
+                  ) : (
+                    <div className="w-full h-full grid place-items-center bg-slate-800 text-white font-bold p-2 text-center text-xs">
+                      {cardFace?.value} {cardFace?.color}
+                    </div>
+                  )}
+                </div>
 
-              {/* Mặt úp (lưng bài) */}
-              <div
-                className="absolute inset-0 rounded-xl overflow-hidden shadow-2xl border-2 border-white/40"
-                style={{
-                  backfaceVisibility: 'hidden',
-                  WebkitBackfaceVisibility: 'hidden',
-                  transform: 'rotateY(180deg)',
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
-                }}
-              >
-                <CardPhoto atlas={atlasId === 'flipDark' ? 'flipDark' : 'std'} name="back_side" height={190} />
-              </div>
-            </motion.div>
+                {/* Mặt úp (lưng bài trước khi xoay ra cho xem) */}
+                <div
+                  className="absolute inset-0 rounded-xl overflow-hidden shadow-2xl border-2 border-white/40"
+                  style={{
+                    backfaceVisibility: 'hidden',
+                    WebkitBackfaceVisibility: 'hidden',
+                    transform: 'rotateY(180deg)',
+                    boxShadow: '0 8px 20px rgba(0,0,0,0.8)',
+                  }}
+                >
+                  <CardPhoto atlas={atlasId === 'flipDark' ? 'flipDark' : 'std'} name="back_side" height={145} />
+                </div>
+              </motion.div>
+            </div>
           </div>
+        )}
 
-          <motion.div
-            animate={{ scale: [1, 1.05, 1] }}
-            transition={{ duration: 1, repeat: Infinity }}
-            className="mt-4 rounded-xl bg-red-950/90 border border-red-500/80 px-4 py-2 text-sm sm:text-base font-bold text-red-200 shadow-2xl backdrop-blur-md"
-          >
-            ⚠️ Phát hiện lá bài cùng màu trên tay {targetName}!
-          </motion.div>
-        </motion.div>
-      )}
-
-      {/* Giai đoạn 2 (hoặc báo ngay nếu không có lá thỏa): Banner kết quả thắng / thua */}
-      {showResult && (
-        <motion.div
-          className="relative flex flex-col items-center text-center px-6 max-w-xl"
-          initial={{ scale: 0.5, y: 24, opacity: 0 }}
-          animate={{ scale: [0.5, 1.1, 1], y: 0, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
-          transition={{ duration: 0.5, times: [0, 0.6, 1] }}
-        >
-          <div className="mb-2 text-3xl sm:text-4xl">
-            {iWon ? '🎉 ⚔️ 🛡️' : iLost ? '💥 ❌ 😱' : '⚔️ BẮT LỖI +4 ⚔️'}
-          </div>
+        {/* Text thông báo kết quả hiển thị nhỏ gọn ngay tại vị trí tay bài đó */}
+        <div className="flex flex-col items-center text-center">
           <div
-            className="display text-3xl sm:text-5xl font-black uppercase tracking-wide"
+            className="display text-xl sm:text-2xl font-black uppercase tracking-wide"
             style={{
-              color: titleColor,
-              textShadow: '0 4px 20px rgba(0,0,0,0.9), 0 0 30px currentColor',
+              color,
+              textShadow: '0 3px 12px rgba(0,0,0,0.95), 0 0 18px currentColor',
             }}
           >
-            {title}
+            {text}
           </div>
-          <div className="mt-3 rounded-xl bg-black/80 px-5 py-2.5 text-sm sm:text-base font-semibold text-white/95 border border-white/20 shadow-2xl backdrop-blur-md">
-            {sub}
-          </div>
-        </motion.div>
-      )}
-    </motion.div>
-  );
-}
-
-function Burst({ text, color }: { text: string; color: string }) {
-  return (
-    <motion.div
-      className="pointer-events-none absolute inset-0 grid place-items-center"
-      initial={{ scale: 0.4, opacity: 0, rotate: -12 }}
-      animate={{ scale: [0.4, 1.25, 1], opacity: [0, 1, 1], rotate: [-12, 4, 0] }}
-      exit={{ scale: 1.6, opacity: 0 }}
-      transition={{ duration: 0.55, times: [0, 0.5, 1] }}
-    >
-      <div className="display text-[13vmin] italic" style={{ color, textShadow: '0 8px 0 rgba(0,0,0,.35)' }}>
-        {text}
-      </div>
+          {sub && (
+            <div className="mt-1 rounded-full bg-black/85 px-3 py-0.5 text-xs font-semibold text-white/95 border border-white/20 shadow-xl backdrop-blur-md">
+              {sub}
+            </div>
+          )}
+        </div>
+      </motion.div>
     </motion.div>
   );
 }
@@ -380,7 +356,10 @@ export function Fx() {
   const myId = useMatch((s) => s.myId);
   const rushEvent = last?.payload.t === 'rush' ? last.payload : null;
   const rushName = rushEvent ? state?.players.find((p) => p.id === rushEvent.playerId)?.name ?? '' : null;
-  const challengeEvent = last?.payload.t === 'challenge' ? last.payload : null;
+
+  const [dismissedId, setDismissedId] = useState<number | null>(null);
+  const challengeFx = fx.slice().reverse().find((f) => f.kind === 'challenge' && f.id !== dismissedId);
+  const challengeEvent = challengeFx?.payload?.t === 'challenge' ? challengeFx.payload : null;
   const challengerName = challengeEvent ? state?.players.find((p) => p.id === challengeEvent.playerId)?.name ?? '' : '';
   const targetName = challengeEvent ? state?.players.find((p) => p.id === challengeEvent.targetId)?.name ?? '' : '';
   const roundOver = state?.phase === 'roundEnd' || state?.phase === 'matchEnd';
@@ -389,17 +368,21 @@ export function Fx() {
     <div className="pointer-events-none absolute inset-0">
       <AnimatePresence>
         {rushName !== null && <RushMoment key={last.id} name={rushName} />}
-        {challengeEvent !== null && (
+        {challengeEvent !== null && challengeFx && (
           <ChallengeMoment
-            key={last.id}
+            key={challengeFx.id}
             challengerName={challengerName}
             targetName={targetName}
             isChallenger={myId === challengeEvent.playerId}
             isTarget={myId === challengeEvent.targetId}
             success={challengeEvent.success}
             revealedCard={challengeEvent.revealedCard}
+            targetId={challengeEvent.targetId}
+            myId={myId}
+            players={state?.players ?? []}
             side={state?.side}
             deckType={state?.deckType}
+            onDismiss={() => setDismissedId(challengeFx.id)}
           />
         )}
         <ImpactFx fx={fx} />
@@ -421,333 +404,4 @@ export function Fx() {
   );
 }
 
-/** Bảng kết quả ván (mock 06): nền tím, hàng #1 vàng, cộng điểm chạy dần. */
-/** Ăn mừng bao lâu trước khi hiện bảng kết quả. */
-const CELEBRATE_MS = UI.celebrateMs;
-const NEXT_ROUND_S = Math.round(UI.nextRoundMs / 1000);
-
-const SPARK_COLORS = ['#FFD34D', '#FF8A2B', '#49D8F0', '#37A64A', '#E23B2E', '#FF4D95'];
-
-/**
- * PHÁO HOA ĂN MỪNG — chen vào giữa lúc ván kết thúc và lúc hiện bảng kết quả.
- *
- * Bàn 3D vẫn nhìn thấy phía dưới: khoảnh khắc đáng ăn mừng là lá bài cuối vừa
- * rơi xuống, che ngay bằng bảng điểm là cướp mất nó.
- *
- * Vị trí và hướng bay của từng đốm sinh bằng RNG TẤT ĐỊNH theo số ván, không
- * phải Math.random(): hàm render phải thuần (React Compiler chặn), và mọi
- * người chơi cùng ván sẽ thấy y hệt nhau.
- */
-function Fireworks({ seed, count = 7 }: { seed: number; count?: number }) {
-  const bursts = useMemo(() => {
-    const rnd = mulberry32(seed ^ 0xf17e);
-    return Array.from({ length: count }, (_, i) => {
-      const sparks = Array.from({ length: 14 }, () => {
-        const a = rnd() * Math.PI * 2;
-        const r = 60 + rnd() * 90;
-        return {
-          tx: `${Math.cos(a) * r}px`,
-          ty: `${Math.sin(a) * r}px`,
-          color: SPARK_COLORS[Math.floor(rnd() * SPARK_COLORS.length)],
-        };
-      });
-      return {
-        left: `${12 + rnd() * 76}%`,
-        top: `${12 + rnd() * 46}%`,
-        delay: i * 0.22 + rnd() * 0.18,
-        color: SPARK_COLORS[Math.floor(rnd() * SPARK_COLORS.length)],
-        sparks,
-      };
-    });
-  }, [seed, count]);
-
-  return (
-    <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
-      {bursts.map((b, i) => (
-        <div key={i} className="absolute" style={{ left: b.left, top: b.top }}>
-          <div
-            className="absolute h-[120px] w-[120px] rounded-full"
-            style={{
-              background: `radial-gradient(circle, ${b.color}cc, transparent 65%)`,
-              animationName: 'fireworkFlash',
-              animationDuration: '0.9s',
-              animationTimingFunction: 'ease-out',
-              animationFillMode: 'forwards',
-              animationDelay: `${b.delay}s`,
-            }}
-          />
-          {b.sparks.map((s, k) => (
-            <span
-              key={k}
-              className="absolute block h-[7px] w-[7px] rounded-full"
-              style={{
-                background: s.color,
-                boxShadow: `0 0 10px ${s.color}`,
-                ['--tx' as string]: s.tx,
-                ['--ty' as string]: s.ty,
-                animationName: 'fireworkSpark',
-                animationDuration: '1.25s',
-                animationTimingFunction: 'cubic-bezier(.15,.7,.3,1)',
-                animationFillMode: 'forwards',
-                animationDelay: `${b.delay}s`,
-              }}
-            />
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: () => void }) {
-  const t = useTranslations('game');
-  const state = useMatch((s) => s.state);
-  const myId = useMatch((s) => s.myId);
-  const online = useRoom((s) => s.mode === 'online');
-  // Chỉ chủ phòng được gửi NEXT_ROUND (server chặn, xem app/api/.../action).
-  const isHost = useRoom((s) => s.meId === s.hostId);
-  const hostId = useRoom((s) => s.hostId);
-  const seats = useRoom((s) => s.seats);
-  const queue = useRoom((s) => s.queue);
-  const roomScores = useRoom((s) => s.scores);
-  const avatarOf = useAvatarLookup();
-
-  const over = !!state && (state.phase === 'roundEnd' || state.phase === 'matchEnd');
-  // Khoá của LƯỢT KẾT THÚC này. Dùng làm mốc so sánh thay vì một cờ boolean:
-  // ván sau kết thúc thì khoá đổi -> tự quay lại giai đoạn ăn mừng, khỏi phải
-  // reset state bằng effect (React chặn setState đồng bộ trong thân effect).
-  // Khoá phải ĐỔI sau MỖI ván. Chỉ dùng roundNo + người thắng là chưa đủ chắc:
-  // ván online được dựng lại từ đầu nên roundNo từng bị đặt lại về 1 mỗi lần
-  // rematch, và một người thắng hai ván liền là khoá lặp y hệt -> màn ăn mừng
-  // coi như 'đã chiếu rồi' và bị bỏ qua. Tổng điểm thì chỉ có tăng.
-  const totalScore = over ? state!.players.reduce((sum, p) => sum + p.score, 0) : 0;
-  const endKey = over ? `${state!.roundNo}:${state!.winnerId ?? ''}:${totalScore}` : '';
-  const [celebratedFor, setCelebratedFor] = useState('');
-  const matchOver = state?.phase === 'matchEnd';
-  // Đã qua 3 giây ăn mừng, bảng điểm đang hiện.
-  const showScores = over && celebratedFor === endKey;
-
-  useEffect(() => {
-    if (!endKey) return;
-    // KHÔNG gọi playSfx('win') ở đây: sfxFor (match.ts) đã phát nó khi bước
-    // 'roundEnd' được commit — đúng cùng khoảnh khắc này. Âm thanh vẫn giữ một
-    // đầu mối duy nhất; chỗ này chỉ lo phần nhạc nổi lên.
-    musicFlourish();
-    const id = setTimeout(() => setCelebratedFor(endKey), CELEBRATE_MS);
-    return () => clearTimeout(id);
-  }, [endKey]);
-
-  /**
-   * VÀO VÁN MỚI SAU MỘT KHOẢNG ĐẾM NGƯỢC (chỉ phòng online).
-   *
-   * Không dùng cơ chế bỏ phiếu: ván mới bắt đầu cho CẢ BÀN, nên chỉ cần một
-   * khoảng chung đủ để mọi người đọc điểm rồi tự đi tiếp. Trong khoảng đó nút bị
-   * KHOÁ — để một người bấm sớm kéo cả bàn đi thì chẳng khác gì không có bảng
-   * điểm. Hết giờ thì mọi client cùng gửi NEXT_ROUND; server xử lý dưới khoá nên
-   * người đầu tiên thắng, các lời gọi còn lại bị từ chối vô hại (act() nuốt
-   * riêng lý do 'round-not-ended', không hiện toast báo lỗi).
-   *
-   * Chơi với bot thì bàn chỉ có mình -> bấm là đi ngay, không đếm.
-   */
-  const counting = online && showScores && !matchOver;
-  // Không phải chủ phòng thì chỉ ngồi chờ: gửi NEXT_ROUND lên cũng bị server từ
-  // chối, hiện nút bấm được chỉ tổ làm người ta bấm rồi tưởng game đơ.
-  const waitingHost = counting && !isHost;
-
-  // MỘT hẹn giờ lo việc chuyển ván. Tách hẳn khỏi con số hiển thị bên dưới: nếu
-  // để việc chuyển ván bám theo state đếm lùi thì mỗi lần render lại là một cơ
-  // hội đếm sai hoặc bắn hai lần.
-  useEffect(() => {
-    if (!counting || !isHost) return;
-    const id = setTimeout(onNext, UI.nextRoundMs);
-    return () => clearTimeout(id);
-  }, [counting, isHost, onNext]);
-
-  // Con số trên mặt nút. Gắn theo `endKey` để ván sau tự bắt đầu lại từ 5 —
-  // component không unmount giữa hai ván nên một biến đếm trần sẽ còn kẹt ở 0.
-  const [countdown, setCountdown] = useState({ key: '', left: NEXT_ROUND_S });
-  useEffect(() => {
-    if (!counting) return;
-    const id = setInterval(() => {
-      setCountdown((c) =>
-        c.key === endKey
-          ? { key: endKey, left: Math.max(0, c.left - 1) }
-          : { key: endKey, left: NEXT_ROUND_S - 1 },
-      );
-    }, 1000);
-    return () => clearInterval(id);
-  }, [counting, endKey]);
-  const left = countdown.key === endKey ? countdown.left : NEXT_ROUND_S;
-
-  if (!state || !over) return null;
-
-  // 3 giây đầu: CHỈ pháo hoa, bàn 3D vẫn nhìn thấy. Hết mới hiện bảng điểm.
-  if (!showScores) {
-    const champ = state.players.find((p) => p.id === state.winnerId);
-    return (
-      <>
-        <Fireworks seed={state.roundNo} />
-        <div
-          // top 26% để không đè lên đống bài giữa bàn; nowrap vì tên người chơi
-          // dài là câu bị ngắt làm đôi, nhìn vỡ hẳn bố cục.
-          className="pointer-events-none absolute left-1/2 top-[26%] z-40 whitespace-nowrap text-center"
-          style={{ animationName: 'winnerPop', animationDuration: `${CELEBRATE_MS}ms`, animationTimingFunction: 'ease-out', animationFillMode: 'forwards' }}
-        >
-          <div className="display text-[6.4vmin] text-[#FFD34D]" style={{ textShadow: '0 6px 0 #6B3F0A, 0 0 40px rgba(255,180,60,.7)' }}>
-            {champ?.id === myId ? t('youWin') : t('winner', { name: champ?.name ?? '' })}
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  const winner = state.players.find((p) => p.id === state.winnerId);
-  const iWon = winner?.id === myId;
-
-  /**
-   * BẢNG XẾP HẠNG CẢ PHÒNG, không riêng 4 người vừa ngồi.
-   *
-   * Người đang ở hàng chờ vẫn có điểm từ những ván họ đã chơi; bỏ họ khỏi bảng
-   * thì nhìn như điểm bốc hơi mỗi lần xoay ghế. Điểm của người đang ngồi lấy từ
-   * VÁN (mới nhất, đã cộng điểm ván này), của người đang chờ lấy từ sổ phòng.
-   */
-  const bench = queue.filter((q) => !state.players.some((p) => p.id === q.id));
-  const ranked = [
-    ...state.players.map((p) => ({
-      id: p.id, name: p.name, score: p.score, gain: state.lastScores[p.id] ?? 0,
-      cards: p.hand.length, seated: true,
-    })),
-    ...bench.map((q) => ({
-      id: q.id, name: q.name, score: roomScores[q.id] ?? 0, gain: 0,
-      cards: 0, seated: false,
-    })),
-  ].sort((a, b) =>
-    (b.id === state.winnerId ? 1 : 0) - (a.id === state.winnerId ? 1 : 0) || b.score - a.score,
-  );
-
-  /**
-   * ĐỘI HÌNH VÁN SAU. Tính bằng ĐÚNG hàm mà server dùng lúc chia lại bài
-   * (src/lib/rotation.ts), nên không thể hứa một đằng rồi vào bàn một nẻo.
-   */
-  const nextSeats = seatsAfterRotation({
-    seats, queue, hostId,
-    consecutive: Object.fromEntries(state.players.map((p) => [p.id, p.consecutiveRounds])),
-  });
-  const hasBench = bench.length > 0;
-
-  return (
-    <motion.div
-      className="pointer-events-auto absolute inset-0 z-50 flex flex-col items-center justify-center"
-      style={{ background: 'radial-gradient(ellipse 70% 60% at 50% 30%, #4A2A5E 0%, #2A1740 40%, #150B22 100%)' }}
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-    >
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{ background: 'conic-gradient(from 200deg at 50% 20%, rgba(255,211,77,.10) 0 30deg, transparent 30deg 90deg, rgba(255,211,77,.08) 90deg 120deg, transparent 120deg 180deg)' }}
-      />
-
-      <motion.div initial={{ y: -18, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="relative text-center">
-        <div className="label text-[16px] tracking-[.4em] text-[#C6A6F0]">
-          {state.rules.targetScore > 0
-            ? t('raceTo', { n: state.roundNo, target: state.rules.targetScore })
-            : t('round', { n: state.roundNo })}
-        </div>
-        <div className="display text-[7vmin] text-[#FFD34D]" style={{ textShadow: '0 6px 0 #6B3F0A' }}>
-          {matchOver ? t('matchWinner', { name: winner?.name ?? '' }) : iWon ? t('youWin') : t('winner', { name: winner?.name ?? '' })}
-        </div>
-      </motion.div>
-
-      {/* Bảng xếp hạng CẢ PHÒNG. Cuộn được vì hàng chờ không giới hạn số người,
-          và trần chiều cao tính theo vh nên không bao giờ đẩy hàng nút ra khỏi
-          màn hình dù phòng có đông tới đâu. */}
-      <div className="scroll-y relative mt-6 flex max-h-[42vh] w-[min(92vw,820px)] flex-col gap-3 pr-1">
-        {ranked.map((p, i) => {
-          const first = i === 0;
-          return (
-            <motion.div
-              key={p.id}
-              className="flex flex-none items-center gap-4 rounded-2xl px-5 py-3"
-              style={
-                first
-                  ? { background: 'linear-gradient(100deg,rgba(255,211,77,.9),rgba(255,158,44,.85))', border: '3px solid #fff', boxShadow: '0 14px 30px rgba(0,0,0,.45)' }
-                  // Người đang chờ mờ hơn một chút: vẫn có tên trong bảng, nhưng
-                  // nhìn là biết ngay ai vừa ngồi bàn ván này.
-                  : { background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.16)', opacity: p.seated ? 1 : 0.7 }
-              }
-              initial={{ opacity: 0, x: -24 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.05 * i, type: 'spring', stiffness: 260, damping: 24 }}
-            >
-              <div className="display w-10 text-[28px]" style={{ color: first ? '#2A1508' : '#C6A6F0' }}>{i + 1}</div>
-              {(() => {
-                const a = avatarOf(p.id);
-                return (
-                  <Avatar
-                    name={p.name}
-                    preset={a.preset ?? i}
-                    avatarUrl={a.url}
-                    self={p.id === myId}
-                    size={54}
-                    className="seat__avatar !h-[54px] !w-[54px] !rounded-[11px]"
-                  />
-                );
-              })()}
-              <div className="min-w-0 flex-1">
-                <div className="display truncate text-[26px]" style={{ color: first ? '#2A1508' : '#F3ECFA' }}>{p.name}</div>
-                <div className="label text-[13px]" style={{ color: first ? '#6A3A12' : '#A48AC8' }}>
-                  {!p.seated ? t('spectating') : p.cards === 0 ? t('emptyHand') : t('handLeft', { n: p.cards })}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="display text-[28px]" style={{ color: first ? '#2A1508' : '#F3ECFA' }}>
-                  {p.seated ? `+${p.gain}` : '—'}
-                </div>
-                <div className="label text-[13px]" style={{ color: first ? '#6A3A12' : '#A48AC8' }}>
-                  {t('total', { n: p.score })}
-                </div>
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      {/* 4 người sẽ ngồi bàn ván sau. Chỉ có gì để nói khi phòng đông hơn 4. */}
-      {hasBench && !matchOver && (
-        <div className="relative mt-5 flex items-center gap-4">
-          <span className="label text-[13px] tracking-[.28em] text-[#C6A6F0]">{t('nextLineup')}</span>
-          <div className="flex gap-3">
-            {nextSeats.map((seat, i) => {
-              const a = seat ? avatarOf(seat.id) : null;
-              return (
-                <div key={seat?.id ?? `empty-${i}`} className="flex w-[76px] flex-col items-center gap-1">
-                  <Avatar
-                    name={seat?.name ?? ''}
-                    preset={a?.preset ?? i}
-                    avatarUrl={a?.url}
-                    self={seat?.id === myId}
-                    size={44}
-                    className="seat__avatar !h-11 !w-11 !rounded-[10px]"
-                  />
-                  <span className="label w-full truncate text-center text-[11px] text-[#C6A6F0]">{seat?.name ?? '—'}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="relative mt-8 flex gap-4">
-        <button className="btn" onClick={onExit}>{t('backToMenu')}</button>
-        {!matchOver && (
-          <button
-            className="btn btn--gold !px-8 !text-[22px]"
-            disabled={counting}
-            onClick={onNext}
-          >
-            {waitingHost && left <= 0 ? t('waitHostNext') : counting ? t('nextRoundIn', { n: left }) : t('nextRound')}
-          </button>
-        )}
-      </div>
-    </motion.div>
-  );
-}
+export { RoundOverlay, Fireworks } from './RoundOverlay';

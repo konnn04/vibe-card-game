@@ -484,8 +484,8 @@ function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, e
         s.pending.wild4 = { by: s.players[playerIdx].id, illegal: wild4Illegal, revealedCard: wild4Card };
       }
       const victim = step(s, playerIdx);
-      if (s.rules.stack) {
-        // cho người kế tiếp cơ hội chồng thêm; nếu họ rút thì nhận cả chuỗi
+      if (s.rules.stack || ((f.value === 'wild4' || f.value === 'wild2') && s.rules.challenge)) {
+        // cho người kế tiếp cơ hội chồng thêm (hoặc bắt lỗi); nếu họ rút thì nhận cả chuỗi
         setTurn(s, victim, now, events, PLAY_ANIM_MS);
       } else {
         const amount = s.pending.amount;
@@ -785,9 +785,9 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       s.pending = null;
       events.push({ t: 'challenge', playerId: action.playerId, targetId: p.wild4.by, success, revealedCard });
 
-      // Nếu bắt đúng (có lá bài lật lên): 2400ms cho animation lật bài.
-      // Nếu bắt sai (không có lá bài): 1000ms báo thua ngay.
-      const challengeAnim = success ? 2400 : 1000;
+      // Nếu bắt đúng (rút lá ra bàn kèm thông báo): 1600ms.
+      // Nếu bắt sai (không có bài gian lận): 1200ms báo thất bại ngay.
+      const challengeAnim = success ? 1600 : 1200;
       if (success) {
         award(s, action.playerId, ACTION_POINTS.challenge);
         give(s, ti, amount, true, events, true);

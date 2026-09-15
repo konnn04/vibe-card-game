@@ -43,6 +43,8 @@ const en = {
     bot: 'Bot',
     addBot: 'Add bot',
     rotated: '{name} rotated out for {next}',
+    roomFull: 'Room is full (maximum 8 players including seats and queue)!',
+    roomNotFound: 'Room not found or invalid room code!',
   },
   rules: {
     title: 'Rules',
@@ -128,6 +130,13 @@ const en = {
     jumpIn: 'Jump in!',
     darkSide: 'DARK SIDE',
     lightSide: 'LIGHT SIDE',
+    challengeSuccess: 'CHALLENGE SUCCESSFUL!',
+    challengeSuccessMe: 'You draw penalty cards!',
+    challengeSuccessTarget: '{name} draws penalty cards!',
+    challengeFail: 'CHALLENGE FAILED!',
+    challengeFailMe: 'You draw 6 penalty cards!',
+    challengeFailTarget: '{name} draws 6 penalty cards!',
+    challengeFoundCard: "{name}'s Card",
   },
   settings: {
     musicTrack: "BACKGROUND MUSIC",

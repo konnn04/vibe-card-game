@@ -210,8 +210,10 @@ export const api = {
   avatar: (code: string, id: string, token: string, image: string | null) =>
     emitWithAck<{ ok: boolean }>(SOCKET_EVENTS.CLIENT_AVATAR, { code, playerId: id, token, image }),
 
-  // Step giờ do server NestJS tự động đẩy bằng timer! Hàm này giữ lại để không break interface
-  step: async (_code: string, _id: string, _token: string) => ({ ok: true }),
+  step: async (_code: string, _id: string, _token: string) => {
+    void _code; void _id; void _token;
+    return { ok: true };
+  },
 
   action: (code: string, id: string, token: string, action: Action) =>
     emitWithAck<{ ok: boolean; rejected?: string }>(SOCKET_EVENTS.CLIENT_ACTION, {

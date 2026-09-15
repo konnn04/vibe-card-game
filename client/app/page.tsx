@@ -3,6 +3,7 @@ import '@/src/lib/patchDiscord';
 import dynamic from 'next/dynamic';
 import { AnimatePresence } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { I18nProvider } from '@/src/i18n';
 import { useSettings } from '@/src/lib/settings';
 import { useMounted } from '@/src/lib/useMounted';
@@ -15,7 +16,7 @@ import { useRoom, type Seat } from '@/src/state/room';
 import { useMatch } from '@/src/state/match';
 import { useChat } from '@/src/state/chat';
 import {
-  api, connect, disconnect, loadToken, playerId, realtimeEnabled, saveToken, startPolling,
+  api, connect, disconnect, loadToken, playerId, saveToken, startPolling,
   type NetSeat, type Snapshot,
 } from '@/src/state/net';
 import { MainMenu } from '@/src/ui/MainMenu';
@@ -38,6 +39,7 @@ const GameCanvas = dynamic(() => import('@/src/three/Scene').then((m) => m.GameC
 type Screen = 'menu' | 'lobby' | 'intro' | 'game';
 
 function Shell() {
+  const tRoom = useTranslations('room');
   const set = useSettings((s) => s.set);
   // Chặn menu cho tới khi ảnh bài + âm thanh + font đã nằm trong cache.
   const [loaded, setLoaded] = useState(false);
@@ -414,9 +416,9 @@ function Shell() {
           <span>⚠️</span>
           <span>
             {error === 'room-full'
-              ? 'Phòng đã đầy (tối đa 8 người bao gồm bàn chơi và hàng chờ)!'
+              ? tRoom('roomFull')
               : error === 'room-not-found'
-                ? 'Không tìm thấy phòng hoặc mã phòng không tồn tại!'
+                ? tRoom('roomNotFound')
                 : error}
           </span>
           <button

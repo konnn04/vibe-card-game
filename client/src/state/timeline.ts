@@ -104,7 +104,7 @@ function eventMs(e: GameEvent, state: GameState): number {
     case 'rotate': return SWAP_GATHER_MS + SWAP_FLY_MS + SWAP_FAN_MS;
     case 'color': return COLOR_MS;
     case 'reverse': return REVERSE_MS;
-    case 'challenge': return e.revealedCard ? 2400 : 1000;
+    case 'challenge': return e.revealedCard ? 1600 : 1200;
     // turn/reject/rush/reshuffle/emote/roundEnd/matchEnd: không có gì để xem
     default: return 0;
   }
@@ -156,6 +156,30 @@ export function sfxDelayOf(e: GameEvent): number {
  */
 export function splitFrames(prev: GameState | null, state: GameState, events: GameEvent[]): Frame[] {
   if (!prev || events.length < 2) return [{ state, events }];
+
+  // Bắt đầu bằng event 'challenge' (bắt lỗi +4) -> Phải chiếu màn bắt lỗi / lật bài trước,
+  // sau đó mới tới bước rút bài phạt dồn và chuyển lượt.
+  if (events[0].t === 'challenge') {
+    const headEvents = [events[0]];
+    const tailEvents = events.slice(1);
+    const drawnPlayerIds = new Set(tailEvents.filter((e) => e.t === 'draw').map((e) => e.playerId));
+    let headState: GameState = { ...state, turn: prev.turn };
+    if (drawnPlayerIds.size > 0 && prev) {
+      headState = {
+        ...headState,
+        drawPile: prev.drawPile,
+        players: headState.players.map((p) => {
+          if (!drawnPlayerIds.has(p.id)) return p;
+          const prevP = prev.players.find((x) => x.id === p.id);
+          return prevP ? { ...p, hand: prevP.hand } : p;
+        }),
+      };
+    }
+    const head: Frame = { state: headState, events: headEvents, phase: 'end' };
+    const tail: Frame = { state, events: tailEvents, phase: 'start' };
+    return [head, tail];
+  }
+
   let cut = 0;
   while (cut < events.length && TURN_END_EVENTS.has(events[cut].t)) cut++;
   if (cut === 0 || cut === events.length) return [{ state, events }];
