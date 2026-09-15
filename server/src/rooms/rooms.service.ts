@@ -134,18 +134,21 @@ export class RoomsService {
   }
 
   quickMatch(player: NetSeat, bgTheme?: string): { code: string; token: string; snapshot: Snapshot } {
-    // Find open public lobby with free seats
+    // Ghép random: chỉ ghép vào phòng đang ở lobby, còn ghế trống và tổng số người < 4
     for (const room of this.rooms.values()) {
       if (room.isPublic && room.status === 'lobby') {
-        const freeSeat = room.seats.findIndex((s, i) => !s && i < room.rules.maxPlayers);
-        if (freeSeat >= 0) {
-          const { token, snapshot } = this.joinRoom(room.code, player);
-          return { code: room.code, token, snapshot };
+        const totalMembers = room.seats.filter((s) => !!s).length + room.queue.length;
+        if (totalMembers < 4) {
+          const freeSeat = room.seats.findIndex((s, i) => !s && i < room.rules.maxPlayers);
+          if (freeSeat >= 0) {
+            const { token, snapshot } = this.joinRoom(room.code, player);
+            return { code: room.code, token, snapshot };
+          }
         }
       }
     }
 
-    // Otherwise create new public room
+    // Nếu không có phòng phù hợp (< 4 người), tự động tạo phòng public mới
     const { code, token } = this.createRoom(player, { player, isPublic: true, bgTheme });
     const snapshot = this.getSnapshot(code, player.id)!;
     return { code, token, snapshot };
@@ -162,6 +165,15 @@ export class RoomsService {
       // Re-joining with valid token
       this.reclaimSeat(room, player.id, player);
     } else {
+      // Tham gia phòng bằng mã: giới hạn tối đa 8 người bao gồm trên bàn chơi lẫn hàng chờ
+      const isAlreadyInRoom = room.seats.some((s) => s?.id === player.id) || room.queue.some((q) => q.id === player.id);
+      if (!isAlreadyInRoom) {
+        const totalMembers = room.seats.filter((s) => !!s).length + room.queue.length;
+        if (totalMembers >= 8) {
+          throw new Error('room-full');
+        }
+      }
+
       // New joiner or no matching token
       token = makeToken();
       room.tokens[player.id] = token;
@@ -387,6 +399,19 @@ export class RoomsService {
     const prev = room.game;
     for (const p of prev?.players ?? []) {
       room.scores[p.id] = p.score;
+    }
+
+    // Nếu bật đổi chỗ ngẫu nhiên mỗi ván: xáo trộn vị trí người chơi trên bàn
+    if (room.rules.randomizeSeats ?? true) {
+      const occupiedIndices = room.seats.map((s, i) => (s ? i : -1)).filter((i) => i !== -1);
+      const shuffled = [...room.seats.filter((s): s is NetSeat => !!s)];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      occupiedIndices.forEach((seatIdx, i) => {
+        room.seats[seatIdx] = shuffled[i];
+      });
     }
 
     const seated = room.seats.filter((s): s is NetSeat => !!s);

@@ -52,6 +52,102 @@ function RushMoment({ name }: { name: string }) {
   );
 }
 
+function ChallengeMoment({
+  challengerName,
+  targetName,
+  isChallenger,
+  isTarget,
+  success,
+}: {
+  challengerName: string;
+  targetName: string;
+  isChallenger: boolean;
+  isTarget: boolean;
+  success: boolean;
+}) {
+  const iWon = isChallenger ? success : isTarget ? !success : false;
+  const iLost = isChallenger ? !success : isTarget ? success : false;
+
+  let title = '';
+  let sub = '';
+  let titleColor = '#FFD34D';
+
+  if (isChallenger) {
+    if (success) {
+      title = 'BẮT LỖI THÀNH CÔNG!';
+      sub = `${targetName} đã giấu màu! Đối thủ bị phạt rút bài!`;
+      titleColor = '#34D399';
+    } else {
+      title = 'BẮT LỖI THẤT BẠI!';
+      sub = `${targetName} đánh đúng luật! Bạn bị phạt rút 6 lá!`;
+      titleColor = '#F87171';
+    }
+  } else if (isTarget) {
+    if (success) {
+      title = 'BỊ BẮT LỖI GIAN LẬN!';
+      sub = `Bạn bị ${challengerName} bắt quả tang còn lá cùng màu! Bị phạt rút bài!`;
+      titleColor = '#F87171';
+    } else {
+      title = 'BẢO VỆ THÀNH CÔNG!';
+      sub = `Bạn đánh hoàn toàn hợp lệ! ${challengerName} bị phạt rút 6 lá!`;
+      titleColor = '#34D399';
+    }
+  } else {
+    if (success) {
+      title = `${challengerName} BẮT LỖI THÀNH CÔNG!`;
+      sub = `${targetName} đã gian lận màu và phải nhận phạt!`;
+      titleColor = '#FBBF24';
+    } else {
+      title = `${challengerName} BẮT LỖI THẤT BẠI!`;
+      sub = `${targetName} đánh đúng luật! ${challengerName} bị phạt 6 lá!`;
+      titleColor = '#F87171';
+    }
+  }
+
+  return (
+    <motion.div
+      className="pointer-events-none absolute inset-0 z-40 grid place-items-center overflow-hidden"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <div
+        className="absolute inset-0"
+        style={{
+          background: iWon
+            ? 'radial-gradient(ellipse at center, rgba(16,185,129,0.35) 0%, rgba(0,0,0,0.7) 80%)'
+            : iLost
+              ? 'radial-gradient(ellipse at center, rgba(239,68,68,0.4) 0%, rgba(0,0,0,0.75) 80%)'
+              : 'radial-gradient(ellipse at center, rgba(245,158,11,0.25) 0%, rgba(0,0,0,0.65) 80%)',
+        }}
+      />
+      <motion.div
+        className="relative flex flex-col items-center text-center px-6 max-w-xl"
+        initial={{ scale: 0.5, y: 24 }}
+        animate={{ scale: [0.5, 1.1, 1], y: 0 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        transition={{ duration: 0.5, times: [0, 0.6, 1] }}
+      >
+        <div className="mb-2 text-3xl sm:text-4xl">
+          {iWon ? '🎉 ⚔️ 🛡️' : iLost ? '💥 ❌ 😱' : '⚔️ BẮT LỖI +4 ⚔️'}
+        </div>
+        <div
+          className="display text-3xl sm:text-5xl font-black uppercase tracking-wide"
+          style={{
+            color: titleColor,
+            textShadow: '0 4px 20px rgba(0,0,0,0.9), 0 0 30px currentColor',
+          }}
+        >
+          {title}
+        </div>
+        <div className="mt-3 rounded-xl bg-black/80 px-5 py-2.5 text-sm sm:text-base font-semibold text-white/95 border border-white/20 shadow-2xl backdrop-blur-md">
+          {sub}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function Burst({ text, color }: { text: string; color: string }) {
   return (
     <motion.div
@@ -167,14 +263,28 @@ export function Fx() {
   const gfx = gfxOf(graphics);
 
   const last = fx[fx.length - 1];
+  const myId = useMatch((s) => s.myId);
   const rushEvent = last?.payload.t === 'rush' ? last.payload : null;
   const rushName = rushEvent ? state?.players.find((p) => p.id === rushEvent.playerId)?.name ?? '' : null;
+  const challengeEvent = last?.payload.t === 'challenge' ? last.payload : null;
+  const challengerName = challengeEvent ? state?.players.find((p) => p.id === challengeEvent.playerId)?.name ?? '' : '';
+  const targetName = challengeEvent ? state?.players.find((p) => p.id === challengeEvent.targetId)?.name ?? '' : '';
   const roundOver = state?.phase === 'roundEnd' || state?.phase === 'matchEnd';
 
   return (
     <div className="pointer-events-none absolute inset-0">
       <AnimatePresence>
         {rushName !== null && <RushMoment key={last.id} name={rushName} />}
+        {challengeEvent !== null && (
+          <ChallengeMoment
+            key={last.id}
+            challengerName={challengerName}
+            targetName={targetName}
+            isChallenger={myId === challengeEvent.playerId}
+            isTarget={myId === challengeEvent.targetId}
+            success={challengeEvent.success}
+          />
+        )}
         <ImpactFx fx={fx} />
         {last?.kind === 'caught' && <Burst key={last.id} text="+2!" color="#E23B2E" />}
         {last?.kind === 'skip' && <Burst key={last.id} text="SKIP" color="#FFF3DA" />}

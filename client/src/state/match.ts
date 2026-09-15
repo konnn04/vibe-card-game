@@ -340,7 +340,7 @@ function stopLoop() {
 const PLAY_SFX: Partial<Record<CardValue, Sfx>> = {
   skip: 'playSkip',
   skipAll: 'playSkip',
-  reverse: 'reverse',
+  reverse: 'action',
   draw1: 'playDraw2',
   draw2: 'playDraw2',
   wild2: 'playDraw4',
@@ -387,9 +387,18 @@ function sfxFor(e: GameEvent, state: GameState) {
     case 'flip': return playSfx('flip');
     case 'swap':
     case 'rotate': return playSfx('swap');
-    // Bắt lỗi +4: thắng và thua nghe KHÁC HẲN nhau — đây là khoảnh khắc ăn thua
-    // lớn nhất ván, người chơi phải biết kết quả ngay không cần đọc chữ.
-    case 'challenge': return playSfx(e.success ? 'challengeWin' : 'challengeLose');
+    // Bắt lỗi +4: âm thanh nghịch nhau theo góc nhìn (người bắt vs người bị bắt).
+    // Nếu tắt luật challenge thì không phát âm thanh.
+    case 'challenge': {
+      if (!state.rules.challenge) return undefined;
+      const myId = useMatch.getState().myId;
+      if (myId === e.playerId) {
+        return playSfx(e.success ? 'challengeWin' : 'challengeLose');
+      } else if (myId === e.targetId) {
+        return playSfx(e.success ? 'challengeLose' : 'challengeWin');
+      }
+      return playSfx(e.success ? 'challengeWin' : 'action');
+    }
     case 'roundEnd': return playSfx('win');
     case 'emote': return playSfx('click');
     default: return undefined;
@@ -403,12 +412,12 @@ function sfxFor(e: GameEvent, state: GameState) {
  * (danh sách id lá vừa rút), bỏ đi là hỏng hình chứ không chỉ thừa một cú nháy.
  */
 const ONESHOT_FX = new Set<GameEvent['t']>(
-  ['skip', 'skipAll', 'caught', 'flip', 'rush', 'color', 'reverse', 'rotate', 'swap', 'roundEnd', 'matchEnd'],
+  ['skip', 'skipAll', 'caught', 'flip', 'rush', 'color', 'reverse', 'rotate', 'swap', 'roundEnd', 'matchEnd', 'challenge'],
 );
 
 function pushFx(prev: FxItem[], events: GameEvent[], state: GameState): FxItem[] {
   const now = Date.now();
-  const keep = ['play', 'rush', 'caught', 'reverse', 'skip', 'skipAll', 'flip', 'color', 'rotate', 'swap', 'roundEnd', 'matchEnd', 'draw', 'emote'];
+  const keep = ['play', 'rush', 'caught', 'reverse', 'skip', 'skipAll', 'flip', 'color', 'rotate', 'swap', 'roundEnd', 'matchEnd', 'draw', 'emote', 'challenge'];
   const add = events
     .filter((e) => keep.includes(e.t))
     .map((e) => ({

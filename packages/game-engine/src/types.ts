@@ -49,6 +49,7 @@ export interface Rules {
   maxPlayers: number;      // 2..4
   teamMode: boolean;       // 2v2 khi đủ 4 người, ghế đối diện cùng đội
   targetScore: number;     // 0 = chơi 1 ván; >0 = race-to-N
+  randomizeSeats: boolean; // đổi chỗ ngồi ngẫu nhiên mỗi ván
 }
 
 export interface PlayerState {

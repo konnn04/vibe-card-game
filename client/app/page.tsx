@@ -410,9 +410,22 @@ function Shell() {
       {modal === 'howto' && <HowToPlay onClose={() => setModal(null)} />}
 
       {error && (
-        <div className="label absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-black/75 px-4 py-2 text-[13px] text-[#FFC98A]">
-          {error}
-          {!realtimeEnabled && ' · Realtime not configured (polling)'}
+        <div className="label absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 rounded-xl bg-red-950/90 border border-red-500/50 px-5 py-2.5 text-[14px] font-semibold text-red-200 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2">
+          <span>⚠️</span>
+          <span>
+            {error === 'room-full'
+              ? 'Phòng đã đầy (tối đa 8 người bao gồm bàn chơi và hàng chờ)!'
+              : error === 'room-not-found'
+                ? 'Không tìm thấy phòng hoặc mã phòng không tồn tại!'
+                : error}
+          </span>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="ml-2 text-red-400 hover:text-white cursor-pointer font-bold"
+          >
+            ✕
+          </button>
         </div>
       )}
     </main>

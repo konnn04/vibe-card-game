@@ -6,21 +6,21 @@ import { CHAT } from '@/src/config';
 import { useChat } from '@/src/state/chat';
 import { playSfx } from '@/src/lib/audio';
 
-/** Bong bóng chat nổi hiển thị bên cạnh avatar người chơi */
+/** Bong bóng chat nổi hiển thị bên cạnh avatar người chơi (chữ đen nền trắng, font rõ nét) */
 export function ChatBubble({ message, side = 'top' }: { message: string; side?: 'top' | 'right' | 'left' | 'bottom' }) {
   return (
     <motion.div
       initial={{ scale: 0.75, opacity: 0, y: side === 'top' ? 8 : -8 }}
       animate={{ scale: 1, opacity: 1, y: 0 }}
       exit={{ scale: 0.8, opacity: 0 }}
-      transition={{ type: 'spring', stiffness: 360, damping: 22 }}
-      className="pointer-events-none z-30 max-w-[200px] select-none rounded-2xl px-3 py-1.5 text-xs font-semibold leading-snug shadow-xl break-words"
+      transition={{ type: 'spring', stiffness: 380, damping: 24 }}
+      className="pointer-events-none z-30 max-w-[250px] select-none rounded-2xl px-3.5 py-2 text-[14px] font-bold leading-snug shadow-2xl break-words relative"
       style={{
-        background: 'rgba(20, 10, 16, 0.94)',
-        backdropFilter: 'blur(8px)',
-        border: '1.5px solid rgba(255, 211, 77, 0.7)',
-        color: '#FFF8E7',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.6), 0 0 14px rgba(255,211,77,0.3)',
+        background: 'rgba(255, 255, 255, 0.96)',
+        backdropFilter: 'blur(10px)',
+        border: '1.5px solid rgba(0, 0, 0, 0.12)',
+        color: '#0f172a',
+        boxShadow: '0 12px 28px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.2)',
       }}
     >
       <span>{message}</span>
@@ -121,7 +121,7 @@ export function ChatInputBar() {
               }
             }}
             placeholder="Nhập tin nhắn... (Enter gửi, Esc hủy)"
-            className="w-[260px] sm:w-[340px] bg-transparent px-2 py-1.5 text-sm text-[#FFF3DA] placeholder-amber-200/40 outline-none"
+            className="w-[260px] sm:w-[340px] bg-transparent px-2.5 py-1.5 text-[15px] font-medium text-white placeholder-amber-200/50 outline-none"
           />
           <button
             type="button"

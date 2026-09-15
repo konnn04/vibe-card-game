@@ -471,6 +471,7 @@ export function Lobby({
     ['rushPenalty', tr('rushPenalty'), tr('rushPenaltySub')],
     ['drawToMatch', tr('drawToMatch'), tr('drawToMatchSub')],
     ['forcePlay', tr('forcePlay'), tr('forcePlaySub')],
+    ['randomizeSeats', tr('randomizeSeats'), tr('randomizeSeatsSub')],
   ];
 
   return (

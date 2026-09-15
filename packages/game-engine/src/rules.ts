@@ -13,6 +13,7 @@ export const DEFAULT_RULES: Rules = {
   maxPlayers: 4,
   teamMode: false,
   targetScore: 0,
+  randomizeSeats: true,
 };
 
 /** Mặt đang hiệu lực của lá bài theo side hiện tại của bàn. */

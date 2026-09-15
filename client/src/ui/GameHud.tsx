@@ -121,6 +121,8 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
    * server từ chối, nhưng người xem không hiểu vì sao nút lại bấm được.
    */
   const seated = !!me;
+  const roomCode = useRoom((s) => s.code);
+  const [copiedCode, setCopiedCode] = useState(false);
   const queue = useRoom((s) => s.queue);
   const queuePos = queue.findIndex((q) => q.id === myId);
   const myIdx = state?.players.findIndex((p) => p.id === myId) ?? -1;
@@ -210,6 +212,14 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
       const isSpace = key === ' ' || ev.code === 'Space';
 
       const run = (fn: () => void) => { ev.preventDefault(); fn(); };
+
+      // Phím tắt 1..6 tương ứng emoji thứ 1..6
+      const matchNum = ev.code.match(/^(?:Digit|Numpad)([1-6])$/);
+      const num = matchNum ? parseInt(matchNum[1], 10) : parseInt(key, 10);
+      if (!isNaN(num) && num >= 1 && num <= EMOTES.length) {
+        return run(() => act({ type: 'EMOTE', playerId: myId, emote: EMOTES[num - 1] }));
+      }
+
       if (is('e') && canDraw) return run(() => act({ type: 'DRAW', playerId: myId }));
       if (is('s') && sCard) return run(playS);
       if (is('q') && canPass) return run(() => act({ type: 'PASS', playerId: myId }));
@@ -267,6 +277,29 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
         <span className="label rounded-[10px] border border-[color:var(--line-2)] bg-[color:var(--panel-2)] px-3 py-1.5 text-[13px] text-[color:var(--gold)]">
           {state.side === 'dark' ? t('darkSide') : t('lightSide')}
         </span>
+        {roomCode && (
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-[10px] border px-3 py-1.5 text-[13px] font-mono font-bold transition-all hover:scale-105 active:scale-95 cursor-pointer shadow"
+            style={{
+              background: 'rgba(20,8,12,.65)',
+              borderColor: 'rgba(255,215,140,.5)',
+              color: '#FFD34D',
+            }}
+            onClick={() => {
+              playSfx('click');
+              const url = typeof window !== 'undefined' ? `${window.location.origin}?room=${roomCode}` : roomCode;
+              navigator.clipboard?.writeText(url);
+              setCopiedCode(true);
+              setTimeout(() => setCopiedCode(false), 2000);
+            }}
+            title="Nhấp để sao chép liên kết mời bạn bè"
+          >
+            <span className="text-[11px] text-[#FFD34D]/75 font-sans">Mã:</span>
+            <span>{roomCode}</span>
+            <span className="text-[12px]">{copiedCode ? '✓' : '📋'}</span>
+          </button>
+        )}
         {state.pending && (
           <motion.span
             initial={{ scale: 0.8 }} animate={{ scale: 1 }}
@@ -562,13 +595,17 @@ function EmotePicker({ onPick }: { onPick: (emote: string) => void }) {
             className="absolute bottom-[52px] left-0 flex gap-1 rounded-2xl border p-1.5"
             style={{ background: 'rgba(12,4,8,.85)', borderColor: 'rgba(255,215,140,.45)' }}
           >
-            {EMOTES.map((e) => (
+            {EMOTES.map((e, idx) => (
               <button
                 key={e}
-                className="grid h-9 w-9 place-items-center rounded-full text-[19px] transition-transform hover:scale-125"
+                className="group relative grid h-9 w-9 place-items-center rounded-xl text-[19px] transition-transform hover:scale-125 cursor-pointer"
                 onClick={() => { onPick(e); setOpen(false); }}
+                title={`Phím ${idx + 1}`}
               >
-                {e}
+                <span>{e}</span>
+                <span className="absolute -bottom-1 -right-0.5 rounded px-1 text-[9px] font-mono font-bold bg-black/80 text-amber-300/90 leading-none pointer-events-none border border-amber-300/30">
+                  {idx + 1}
+                </span>
               </button>
             ))}
           </motion.div>

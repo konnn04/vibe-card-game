@@ -53,8 +53,8 @@ export const COLOR_MS = 700;
  * quá ngắn để mắt bắt được cú lật — nới ra vừa đủ cho cả vòng lật xong.
  */
 export const REVERSE_MS = 520;
-/** Bắt lỗi +4: khoảng lặng đủ đọc kết quả trước khi phạt bay. */
-export const CHALLENGE_MS = 500;
+/** Bắt lỗi +4: kéo dài để kịp nhìn animation và kết quả thắng/thua. */
+export const CHALLENGE_MS = 1400;
 /** Đệm nhỏ sau mỗi animation để mắt kịp chốt, tránh cắt ngay khung cuối. */
 const SETTLE_MS = 50;
 /**

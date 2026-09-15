@@ -56,6 +56,8 @@ const en = {
     rushPenaltySub: '+2 if you forget to call Ú Nồ',
     forcePlay: 'Force play',
     forcePlaySub: 'Cannot pass while holding a playable card',
+    randomizeSeats: 'Randomize seats',
+    randomizeSeatsSub: 'Shuffle seat order each new round',
     sevenZeroSub: 'Swap hands on 0 / 7',
     stackSub: 'Stack the penalty',
     jumpInSub: 'Identical card, out of turn',

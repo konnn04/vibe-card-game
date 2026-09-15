@@ -56,6 +56,8 @@ const vi = {
     rushPenaltySub: '+2 nếu quên hô Ú Nồ',
     forcePlay: 'Bắt buộc đánh',
     forcePlaySub: 'Còn lá đánh được thì không được bỏ lượt',
+    randomizeSeats: 'Đổi chỗ ngẫu nhiên',
+    randomizeSeatsSub: 'Xáo trộn chỗ ngồi mỗi ván mới',
     sevenZeroSub: 'Đổi bài khi đánh 0 / 7',
     stackSub: 'Stack hình phạt',
     jumpInSub: 'Lá y hệt, không cần tới lượt',
