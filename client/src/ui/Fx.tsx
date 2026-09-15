@@ -2,7 +2,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { face, mulberry32 } from '@u-no/game-engine';
+import { face, mulberry32, type Card, type DeckType } from '@u-no/game-engine';
 import { useMatch, type FxItem } from '@/src/state/match';
 import { useAvatarLookup, useRoom } from '@/src/state/room';
 import { seatsAfterRotation } from '@/src/lib/rotation';
@@ -11,6 +11,8 @@ import { gfxOf, useSettings } from '@/src/lib/settings';
 import { musicFlourish } from '@/src/lib/audio';
 import { Avatar } from './Avatar';
 import { UI } from '@/src/config';
+import { CardPhoto, type AtlasId } from './CardPhoto';
+import { resolvePhotoSprite, type AtlasVariant } from '@/src/three/photoAtlas';
 
 /** Khoảnh khắc RUSH (mock 05): chữ vàng khổng lồ + tia sáng quay + dòng "còn 1 lá". */
 function RushMoment({ name }: { name: string }) {
@@ -58,15 +60,48 @@ function ChallengeMoment({
   isChallenger,
   isTarget,
   success,
+  revealedCard,
+  side = 'light',
+  deckType = 'classic',
 }: {
   challengerName: string;
   targetName: string;
   isChallenger: boolean;
   isTarget: boolean;
   success: boolean;
+  revealedCard?: Card;
+  side?: 'light' | 'dark';
+  deckType?: DeckType;
 }) {
   const iWon = isChallenger ? success : isTarget ? !success : false;
   const iLost = isChallenger ? !success : isTarget ? success : false;
+
+  const [flipped, setFlipped] = useState(false);
+  const [showResult, setShowResult] = useState(!revealedCard);
+
+  useEffect(() => {
+    if (!revealedCard) return;
+    // 150ms: Lật lá bài lên cho cả bàn xem
+    const t1 = setTimeout(() => setFlipped(true), 150);
+    // 1450ms: Úp lá bài lại
+    const t2 = setTimeout(() => setFlipped(false), 1450);
+    // 1750ms: Hiện kết quả báo thua
+    const t3 = setTimeout(() => setShowResult(true), 1750);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [revealedCard]);
+
+  const cardFace = revealedCard ? face(revealedCard, side) : null;
+  const atlasVariant: AtlasVariant = deckType === 'flip'
+    ? (side === 'dark' ? 'flipDark' : 'flipLight')
+    : 'std';
+  const spriteName = cardFace
+    ? resolvePhotoSprite(atlasVariant, cardFace.color, cardFace.value)
+    : null;
+  const atlasId: AtlasId = atlasVariant;
 
   let title = '';
   let sub = '';
@@ -114,36 +149,115 @@ function ChallengeMoment({
       <div
         className="absolute inset-0"
         style={{
-          background: iWon
-            ? 'radial-gradient(ellipse at center, rgba(16,185,129,0.35) 0%, rgba(0,0,0,0.7) 80%)'
-            : iLost
-              ? 'radial-gradient(ellipse at center, rgba(239,68,68,0.4) 0%, rgba(0,0,0,0.75) 80%)'
-              : 'radial-gradient(ellipse at center, rgba(245,158,11,0.25) 0%, rgba(0,0,0,0.65) 80%)',
+          background: showResult
+            ? iWon
+              ? 'radial-gradient(ellipse at center, rgba(16,185,129,0.35) 0%, rgba(0,0,0,0.7) 80%)'
+              : iLost
+                ? 'radial-gradient(ellipse at center, rgba(239,68,68,0.4) 0%, rgba(0,0,0,0.75) 80%)'
+                : 'radial-gradient(ellipse at center, rgba(245,158,11,0.25) 0%, rgba(0,0,0,0.65) 80%)'
+            : 'radial-gradient(ellipse at center, rgba(30,12,20,0.5) 0%, rgba(0,0,0,0.85) 85%)',
         }}
       />
-      <motion.div
-        className="relative flex flex-col items-center text-center px-6 max-w-xl"
-        initial={{ scale: 0.5, y: 24 }}
-        animate={{ scale: [0.5, 1.1, 1], y: 0 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        transition={{ duration: 0.5, times: [0, 0.6, 1] }}
-      >
-        <div className="mb-2 text-3xl sm:text-4xl">
-          {iWon ? '🎉 ⚔️ 🛡️' : iLost ? '💥 ❌ 😱' : '⚔️ BẮT LỖI +4 ⚔️'}
-        </div>
-        <div
-          className="display text-3xl sm:text-5xl font-black uppercase tracking-wide"
-          style={{
-            color: titleColor,
-            textShadow: '0 4px 20px rgba(0,0,0,0.9), 0 0 30px currentColor',
-          }}
+
+      {/* Giai đoạn 1: Nếu người bị bắt lỗi CÓ LÁ THỎA -> Lật lá bài lên cho cả bàn xem rồi úp lại */}
+      {revealedCard && !showResult && (
+        <motion.div
+          className="relative flex flex-col items-center text-center px-4"
+          initial={{ scale: 0.3, y: 30, opacity: 0 }}
+          animate={{ scale: 1, y: 0, opacity: 1 }}
+          exit={{ scale: 0.7, opacity: 0 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 22 }}
         >
-          {title}
-        </div>
-        <div className="mt-3 rounded-xl bg-black/80 px-5 py-2.5 text-sm sm:text-base font-semibold text-white/95 border border-white/20 shadow-2xl backdrop-blur-md">
-          {sub}
-        </div>
-      </motion.div>
+          <div className="mb-3 rounded-full bg-black/85 px-4 py-1.5 text-xs sm:text-sm font-bold tracking-wide text-amber-300 border border-amber-300/40 shadow-xl backdrop-blur-md">
+            🔍 KIỂM TRA TAY BÀI CỦA {targetName.toUpperCase()}
+          </div>
+
+          {/* 3D Flip Card Container */}
+          <div
+            className="relative"
+            style={{
+              perspective: 1000,
+              width: 125,
+              height: 190,
+            }}
+          >
+            <motion.div
+              className="w-full h-full relative"
+              animate={{ rotateY: flipped ? 0 : 180 }}
+              transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+              style={{
+                transformStyle: 'preserve-3d',
+              }}
+            >
+              {/* Mặt ngửa (hiển thị lá bài cùng màu bị phát hiện) */}
+              <div
+                className="absolute inset-0 rounded-xl overflow-hidden shadow-2xl border-2 border-amber-300/80"
+                style={{
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                  boxShadow: '0 0 35px rgba(255, 211, 77, 0.6), 0 10px 30px rgba(0,0,0,0.8)',
+                }}
+              >
+                {spriteName ? (
+                  <CardPhoto atlas={atlasId} name={spriteName} height={190} />
+                ) : (
+                  <div className="w-full h-full grid place-items-center bg-slate-800 text-white font-bold p-2 text-center text-sm">
+                    {cardFace ? `${cardFace.value} ${cardFace.color}` : 'Card'}
+                  </div>
+                )}
+              </div>
+
+              {/* Mặt úp (lưng bài) */}
+              <div
+                className="absolute inset-0 rounded-xl overflow-hidden shadow-2xl border-2 border-white/40"
+                style={{
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                  transform: 'rotateY(180deg)',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
+                }}
+              >
+                <CardPhoto atlas={atlasId === 'flipDark' ? 'flipDark' : 'std'} name="back_side" height={190} />
+              </div>
+            </motion.div>
+          </div>
+
+          <motion.div
+            animate={{ scale: [1, 1.05, 1] }}
+            transition={{ duration: 1, repeat: Infinity }}
+            className="mt-4 rounded-xl bg-red-950/90 border border-red-500/80 px-4 py-2 text-sm sm:text-base font-bold text-red-200 shadow-2xl backdrop-blur-md"
+          >
+            ⚠️ Phát hiện lá bài cùng màu trên tay {targetName}!
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* Giai đoạn 2 (hoặc báo ngay nếu không có lá thỏa): Banner kết quả thắng / thua */}
+      {showResult && (
+        <motion.div
+          className="relative flex flex-col items-center text-center px-6 max-w-xl"
+          initial={{ scale: 0.5, y: 24, opacity: 0 }}
+          animate={{ scale: [0.5, 1.1, 1], y: 0, opacity: 1 }}
+          exit={{ scale: 0.9, opacity: 0 }}
+          transition={{ duration: 0.5, times: [0, 0.6, 1] }}
+        >
+          <div className="mb-2 text-3xl sm:text-4xl">
+            {iWon ? '🎉 ⚔️ 🛡️' : iLost ? '💥 ❌ 😱' : '⚔️ BẮT LỖI +4 ⚔️'}
+          </div>
+          <div
+            className="display text-3xl sm:text-5xl font-black uppercase tracking-wide"
+            style={{
+              color: titleColor,
+              textShadow: '0 4px 20px rgba(0,0,0,0.9), 0 0 30px currentColor',
+            }}
+          >
+            {title}
+          </div>
+          <div className="mt-3 rounded-xl bg-black/80 px-5 py-2.5 text-sm sm:text-base font-semibold text-white/95 border border-white/20 shadow-2xl backdrop-blur-md">
+            {sub}
+          </div>
+        </motion.div>
+      )}
     </motion.div>
   );
 }
@@ -283,6 +397,9 @@ export function Fx() {
             isChallenger={myId === challengeEvent.playerId}
             isTarget={myId === challengeEvent.targetId}
             success={challengeEvent.success}
+            revealedCard={challengeEvent.revealedCard}
+            side={state?.side}
+            deckType={state?.deckType}
           />
         )}
         <ImpactFx fx={fx} />

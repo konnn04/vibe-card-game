@@ -440,7 +440,7 @@ function flipSide(s: GameState, events: GameEvent[]) {
 }
 
 /** Áp dụng hiệu ứng lá vừa đánh rồi chuyển lượt. */
-function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, events: GameEvent[], wild4Illegal = false) {
+function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, events: GameEvent[], wild4Illegal = false, wild4Card?: Card) {
   const f = face(card, s.side);
   const two = s.players.length === 2;
 
@@ -481,7 +481,7 @@ function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, e
       // Chỉ lá Wild Draw mới bị bắt lỗi. Lá chồng sau GHI ĐÈ thông tin bắt lỗi:
       // người bị phạt luôn chỉ được bắt lỗi lá VỪA đánh vào mặt mình.
       if ((f.value === 'wild4' || f.value === 'wild2') && s.rules.challenge) {
-        s.pending.wild4 = { by: s.players[playerIdx].id, illegal: wild4Illegal };
+        s.pending.wild4 = { by: s.players[playerIdx].id, illegal: wild4Illegal, revealedCard: wild4Card };
       }
       const victim = step(s, playerIdx);
       if (s.rules.stack) {
@@ -599,8 +599,10 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       // điểm duy nhất còn đủ dữ kiện: lá vừa bị splice khỏi tay, và `activeColor`
       // vẫn là màu CŨ (lá wild chưa đổi màu — việc đó xảy ra ở CHOOSE_COLOR).
       const isWildDraw = f.value === 'wild4' || f.value === 'wild2';
-      const wild4Illegal = isWildDraw
-        && s.players[pi].hand.some((c) => face(c, s.side).color === s.activeColor);
+      const matchingCard = isWildDraw
+        ? s.players[pi].hand.find((c) => face(c, s.side).color === s.activeColor)
+        : undefined;
+      const wild4Illegal = isWildDraw && !!matchingCard;
 
       if (f.color !== 'wild') s.activeColor = f.color;
 
@@ -643,11 +645,11 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
           s.activeColor = action.chosenColor;
           s.wildColors[card.id] = action.chosenColor;
           events.push({ t: 'color', color: action.chosenColor });
-          applyEffect(s, pi, card, now, events, wild4Illegal);
+          applyEffect(s, pi, card, now, events, wild4Illegal, matchingCard);
         } else {
           // chờ client chọn màu (color wheel) rồi mới resolve tiếp
           s.phase = 'awaitColor';
-          s.resume = { kind: 'color', cardId: card.id, playerId: action.playerId, wild4Illegal };
+          s.resume = { kind: 'color', cardId: card.id, playerId: action.playerId, wild4Illegal, wild4Card: matchingCard };
           // GIAI ĐOẠN "SAU ĐÁNH" vẫn phải có, dù lượt CHƯA đổi người.
           // LỖI CŨ: nhánh này không gọi setTurn nên turnHoldUntil giữ nguyên mốc
           // của nước đi TRƯỚC (đã trôi qua) -> đo được hold = -200ms: lá Wild
@@ -658,7 +660,7 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
         return { state: s, events };
       }
 
-      applyEffect(s, pi, card, now, events, wild4Illegal);
+      applyEffect(s, pi, card, now, events, wild4Illegal, matchingCard);
       return { state: s, events };
     }
 
@@ -671,12 +673,13 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       // Đọc TRƯỚC khi xoá resume — cờ "đánh +N sai luật" được chốt từ lúc đánh
       // và gửi kèm qua đây (lúc này activeColor đã bị đổi, không tính lại được).
       const illegal = !!s.resume.wild4Illegal;
+      const matchingCard = s.resume.wild4Card;
       s.activeColor = action.color;
       s.wildColors[card.id] = action.color;
       s.phase = 'awaitPlay';
       s.resume = null;
       events.push({ t: 'color', color: action.color });
-      applyEffect(s, pi, card, now, events, illegal);
+      applyEffect(s, pi, card, now, events, illegal, matchingCard);
       return { state: s, events };
     }
 
@@ -778,18 +781,22 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
 
       const success = p.wild4.illegal;
       const amount = p.amount;
+      const revealedCard = success ? p.wild4.revealedCard : undefined;
       s.pending = null;
-      events.push({ t: 'challenge', playerId: action.playerId, targetId: p.wild4.by, success });
+      events.push({ t: 'challenge', playerId: action.playerId, targetId: p.wild4.by, success, revealedCard });
 
+      // Nếu bắt đúng (có lá bài lật lên): 2400ms cho animation lật bài.
+      // Nếu bắt sai (không có lá bài): 1000ms báo thua ngay.
+      const challengeAnim = success ? 2400 : 1000;
       if (success) {
         award(s, action.playerId, ACTION_POINTS.challenge);
         give(s, ti, amount, true, events, true);
         // Người bắt đúng vẫn đang ở lượt mình -> cấp lại lượt cho CHÍNH HỌ.
-        const animBudget = CHALLENGE_ANIM_MS + Math.min((amount - 1) * 75 + 260 + 250, 3000);
+        const animBudget = challengeAnim + Math.min((amount - 1) * 75 + 260 + 250, 3000);
         setTurn(s, pi, now, events, animBudget, 'effect');
       } else {
         give(s, pi, amount + 2, true, events, true);
-        const animBudget = CHALLENGE_ANIM_MS + Math.min((amount + 1) * 75 + 260 + 250, 3000);
+        const animBudget = challengeAnim + Math.min((amount + 1) * 75 + 260 + 250, 3000);
         setTurn(s, step(s, pi), now, events, animBudget, 'effect');
       }
       return { state: s, events };

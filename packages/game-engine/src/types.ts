@@ -83,7 +83,7 @@ export type PendingDraw =
        * bài và màu đang hiệu lực trước đó), nên lúc bắt lỗi chỉ việc đọc ra,
        * không phải dựng lại quá khứ.
        */
-      wild4?: { by: string; illegal: boolean };
+      wild4?: { by: string; illegal: boolean; revealedCard?: Card };
     }
   | { value: 'drawColor'; color: CardColor }
   | null;
@@ -169,6 +169,7 @@ export interface GameState {
     /** Lá Wild +N này có bị đánh SAI LUẬT không (còn lá đúng màu trên tay).
      *  Chốt lúc đánh, mang theo qua bước chọn màu để applyEffect ghi vào pending. */
     wild4Illegal?: boolean;
+    wild4Card?: Card;
   } | null;
   drawnThisTurn: boolean;    // đã rút trong lượt này (không được rút tiếp)
   /**
@@ -243,8 +244,8 @@ export type GameEvent =
   | { t: 'flip'; side: DeckSide }
   | { t: 'swap'; a: string; b: string }
   | { t: 'rotate'; direction: 1 | -1 }
-  /** Kết quả bắt lỗi +4: `success` = người đánh +4 đã phạm luật. */
-  | { t: 'challenge'; playerId: string; targetId: string; success: boolean }
+  /** Kết quả bắt lỗi +4: `success` = người đánh +4 đã phạm luật; `revealedCard` = lá cùng màu bị phát hiện. */
+  | { t: 'challenge'; playerId: string; targetId: string; success: boolean; revealedCard?: Card }
   | { t: 'rush'; playerId: string }
   | { t: 'caught'; playerId: string; amount: number }
   | { t: 'turn'; playerId: string; deadline: number }

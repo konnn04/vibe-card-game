@@ -104,7 +104,7 @@ function eventMs(e: GameEvent, state: GameState): number {
     case 'rotate': return SWAP_GATHER_MS + SWAP_FLY_MS + SWAP_FAN_MS;
     case 'color': return COLOR_MS;
     case 'reverse': return REVERSE_MS;
-    case 'challenge': return CHALLENGE_MS;
+    case 'challenge': return e.revealedCard ? 2400 : 1000;
     // turn/reject/rush/reshuffle/emote/roundEnd/matchEnd: không có gì để xem
     default: return 0;
   }
