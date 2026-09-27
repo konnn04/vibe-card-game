@@ -32,6 +32,7 @@ import { Toast } from '@/src/ui/Toast';
 import { SpectatorRail } from '@/src/ui/SpectatorRail';
 import { DisconnectModal } from '@/src/ui/DisconnectModal';
 import { ChatInputBar, useChatKeyboard } from '@/src/ui/InGameChat';
+import { MobileGuard } from '@/src/ui/MobileGuard';
 
 // WebGL chỉ khởi tạo khi vào bàn -> menu không tốn GPU context
 const GameCanvas = dynamic(() => import('@/src/three/Scene').then((m) => m.GameCanvas), { ssr: false });
@@ -337,6 +338,7 @@ function Shell() {
 
   return (
     <main className="relative h-dvh w-screen overflow-hidden">
+      <MobileGuard />
       {(screen === 'game' || screen === 'intro') && <GameCanvas introActive={screen === 'intro'} />}
 
       <AnimatePresence mode="wait">

@@ -310,3 +310,11 @@ option { background: #241536; }
 .legal strong { color: #FFE9C2; }
 .legal code { font-family: ui-monospace, monospace; font-size: 13px; padding: 1px 5px; border-radius: 5px; background: rgba(255, 196, 128, .12); }
 .legal .muted { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: #8A6A52; }
+
+/* ── MOBILE: Xoay ngang & Toàn màn hình ── */
+@keyframes phoneRotateAnim {
+  0%, 20% { transform: rotate(0deg); }
+  45%, 75% { transform: rotate(-90deg); }
+  95%, 100% { transform: rotate(0deg); }
+}
+

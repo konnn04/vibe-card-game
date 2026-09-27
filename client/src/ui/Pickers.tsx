@@ -34,20 +34,20 @@ export function ColorWheel({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          <div className="flex flex-col items-center gap-6">
+          <div className="flex flex-col items-center gap-3 sm:gap-6">
             <div className="text-center">
               <div
-                className="display text-[46px] text-[#FFF3DA]"
-                style={{ textShadow: '0 5px 0 rgba(0,0,0,.4)' }}
+                className="display text-[26px] sm:text-[46px] text-[#FFF3DA]"
+                style={{ textShadow: '0 4px 0 rgba(0,0,0,.4)' }}
               >
                 {t('pickColor')}
               </div>
-              <div className="label mt-1 text-[15px] tracking-[.24em] text-[#FFC98A]">{seconds}s</div>
+              <div className="label mt-0.5 text-[13px] sm:text-[15px] tracking-[.24em] text-[#FFC98A]">{seconds}s</div>
             </div>
 
             <motion.div
               className="relative"
-              style={{ width: 380, height: 380 }}
+              style={{ width: 'min(360px, 56vh)', height: 'min(360px, 56vh)' }}
               initial={{ scale: 0.8, rotate: -8 }}
               animate={{ scale: 1, rotate: 0 }}
               exit={{ scale: 0.85, opacity: 0 }}
@@ -57,12 +57,12 @@ export function ColorWheel({
                 className="absolute inset-0 rounded-full"
                 style={{
                   background: `conic-gradient(${conic})`,
-                  border: '8px solid #fff',
-                  boxShadow: '0 30px 70px rgba(0,0,0,.6), 0 0 70px rgba(255,170,70,.35)',
+                  border: '6px solid #fff',
+                  boxShadow: '0 20px 50px rgba(0,0,0,.6), 0 0 50px rgba(255,170,70,.35)',
                 }}
               />
-              <div className="pointer-events-none absolute left-1/2 top-0 h-full w-2 -translate-x-1/2 bg-white" />
-              <div className="pointer-events-none absolute left-0 top-1/2 h-2 w-full -translate-y-1/2 bg-white" />
+              <div className="pointer-events-none absolute left-1/2 top-0 h-full w-1.5 -translate-x-1/2 bg-white" />
+              <div className="pointer-events-none absolute left-0 top-1/2 h-1.5 w-full -translate-y-1/2 bg-white" />
 
               {colors.map((c, i) => (
                 <button
@@ -71,7 +71,7 @@ export function ColorWheel({
                     playSfx('click');
                     onPick(c);
                   }}
-                  className="display absolute h-1/2 w-1/2 text-[30px] text-white transition-transform hover:scale-105"
+                  className="display absolute h-1/2 w-1/2 text-[26px] text-white transition-transform hover:scale-105 active:scale-95"
                   style={{
                     ...(i === 0
                       ? { right: 0, top: 0 }
@@ -89,13 +89,13 @@ export function ColorWheel({
               ))}
               <div
                 className="pointer-events-none absolute left-1/2 top-1/2 grid -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full"
-                style={{ width: 132, height: 132, background: '#17141F', border: '8px solid #fff' }}
+                style={{ width: 'min(116px, 18vh)', height: 'min(116px, 18vh)', background: '#17141F', border: '5px solid #fff' }}
               >
-                <div className="grid grid-cols-2 gap-[5px]">
+                <div className="grid grid-cols-2 gap-1">
                   {colors.map((c) => (
                     <span
                       key={`q-${c}`}
-                      className="block h-[26px] w-[26px] rounded-[5px]"
+                      className="block h-[20px] w-[20px] rounded-[4px]"
                       style={{ background: COLOR_HEX[c] }}
                     />
                   ))}

@@ -1,7 +1,7 @@
 'use client';
 import * as THREE from 'three';
-import { useEffect, useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useEffect, useMemo, useRef, useCallback } from 'react';
+import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import type { PhotoAtlas } from './photoAtlas';
 import { CARD_H, CARD_W, DECK_POS } from './layout';
@@ -266,6 +266,92 @@ export function CardMesh({
 
   const baseOrder = layerIndex !== undefined ? 20 + layerIndex : (dimmed ? 0 : 2);
 
+  const isPointerDownRef = useRef(false);
+  const pointerStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const pointerIdRef = useRef<number | null>(null);
+  const cleanupListenersRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      cleanupListenersRef.current?.();
+    };
+  }, []);
+
+  const handlePointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
+    if (!interactive || !onSelect) return;
+    e.stopPropagation();
+
+    cleanupListenersRef.current?.();
+
+    // Nhấc lá bài lên ngay để người chơi thấy rõ quân bài ("nhô để thấy")
+    onHoverCard?.(id);
+    if (cardColor && onHoverColor) onHoverColor(cardColor);
+
+    isPointerDownRef.current = true;
+    pointerStartRef.current = { x: e.clientX, y: e.clientY };
+    pointerIdRef.current = e.pointerId;
+
+    const onWindowPointerMove = (moveEvt: PointerEvent) => {
+      if (pointerIdRef.current !== null && moveEvt.pointerId !== pointerIdRef.current) return;
+      if (!isPointerDownRef.current) return;
+
+      const dx = moveEvt.clientX - pointerStartRef.current.x;
+      const dy = moveEvt.clientY - pointerStartRef.current.y;
+
+      // Kéo ngón tay xuống (dy > 35px) về phía đáy màn hình hoặc kéo quá xa sang 2 bên
+      // mà không hất lên -> hủy đánh bài, hạ bài xuống để người chơi biết đã hủy
+      const isCancel = dy > 35 || (Math.abs(dx) > 65 && dy > -25);
+      if (isCancel) {
+        onHoverCard?.(null);
+        if (onHoverColor) onHoverColor(null);
+      } else {
+        onHoverCard?.(id);
+        if (cardColor && onHoverColor) onHoverColor(cardColor);
+      }
+    };
+
+    const onWindowPointerUp = (upEvt: PointerEvent) => {
+      if (pointerIdRef.current !== null && upEvt.pointerId !== pointerIdRef.current) return;
+      cleanup();
+
+      if (!isPointerDownRef.current) return;
+      isPointerDownRef.current = false;
+      pointerIdRef.current = null;
+
+      const dx = upEvt.clientX - pointerStartRef.current.x;
+      const dy = upEvt.clientY - pointerStartRef.current.y;
+      const isCancel = dy > 35 || (Math.abs(dx) > 65 && dy > -25);
+
+      if (!isCancel) {
+        // Chỉ đánh bài khi buông tay ra (ontouchup / pointerup)
+        onSelect(id);
+      }
+      onHoverCard?.(null);
+      if (onHoverColor) onHoverColor(null);
+    };
+
+    const onWindowPointerCancel = (cancelEvt: PointerEvent) => {
+      if (pointerIdRef.current !== null && cancelEvt.pointerId !== pointerIdRef.current) return;
+      cleanup();
+      isPointerDownRef.current = false;
+      pointerIdRef.current = null;
+      onHoverCard?.(null);
+      if (onHoverColor) onHoverColor(null);
+    };
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onWindowPointerMove);
+      window.removeEventListener('pointerup', onWindowPointerUp);
+      window.removeEventListener('pointercancel', onWindowPointerCancel);
+      cleanupListenersRef.current = null;
+    };
+
+    cleanupListenersRef.current = cleanup;
+    window.addEventListener('pointermove', onWindowPointerMove);
+    window.addEventListener('pointerup', onWindowPointerUp);
+    window.addEventListener('pointercancel', onWindowPointerCancel);
+  }, [id, interactive, onSelect, onHoverCard, cardColor, onHoverColor]);
+
   return (
     <group ref={group}>
       {/* Nhãn phím tắt nổi trên đầu lá — chỉ 1 lá có tại một thời điểm nên
@@ -314,11 +400,13 @@ export function CardMesh({
               document.body.style.cursor = 'pointer';
             } : undefined}
             onPointerOut={interactive ? () => {
-              onHoverCard?.(null);
-              if (onHoverColor) onHoverColor(null);
+              if (!isPointerDownRef.current) {
+                onHoverCard?.(null);
+                if (onHoverColor) onHoverColor(null);
+              }
               document.body.style.cursor = 'auto';
             } : undefined}
-            onPointerDown={interactive && onSelect ? (e) => { e.stopPropagation(); onSelect(id); } : undefined}
+            onPointerDown={handlePointerDown}
           />
         )}
         <mesh
@@ -329,7 +417,7 @@ export function CardMesh({
           renderOrder={baseOrder - 1}
           onPointerOver={interactive && sides !== 'both' ? (e) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; } : undefined}
           onPointerOut={interactive && sides !== 'both' ? () => { document.body.style.cursor = 'auto'; } : undefined}
-          onPointerDown={interactive && sides !== 'both' && onSelect ? (e) => { e.stopPropagation(); onSelect(id); } : undefined}
+          onPointerDown={interactive && sides !== 'both' ? handlePointerDown : undefined}
         />
       </group>
     </group>

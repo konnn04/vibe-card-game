@@ -21,6 +21,7 @@ import { SegmentedControl } from './CustomSelect';
 import { useNetworkStore } from '@/src/state/net';
 import { useChat } from '@/src/state/chat';
 import { ChatBubble } from './InGameChat';
+import { FullscreenToggle } from './MobileGuard';
 import type { DeckType } from '@u-no/game-engine';
 
 /** Tự động nhận diện màn hình nhỏ hoặc Discord để thu gọn tỉ lệ UI */
@@ -89,8 +90,8 @@ function SeatChip({
   const chatMessages = useChat((s) => s.messages);
   const chat = seat ? chatMessages[seat.id] : null;
 
-  const cardW = isCompact ? 'w-[88px]' : 'w-[104px]';
-  const cardH = isCompact ? 'h-[96px]' : 'h-[112px]';
+  const cardW = isCompact ? 'w-[74px] sm:w-[88px]' : 'w-[104px]';
+  const cardH = isCompact ? 'h-[78px] sm:h-[96px]' : 'h-[112px]';
 
   // Tính ping / trạng thái mạng
   const pr = seat ? presence[seat.id] : null;
@@ -198,7 +199,7 @@ function SeatChip({
             <Avatar
               name={seat.name}
               preset={seat.avatarPreset}
-              size={isCompact ? 32 : 40}
+              size={isCompact ? 28 : 40}
               avatarUrl={avatarOf(seat.id).url}
               self={isMe}
               className="seat__avatar !rounded-full overflow-hidden shadow-md"
@@ -239,7 +240,7 @@ function SeatChip({
             <div
               className="display truncate font-bold leading-tight"
               style={{
-                fontSize: isCompact ? 12 : 13,
+                fontSize: isCompact ? 11 : 13,
                 color: isMe ? '#2A1508' : '#FFF3DA',
               }}
               title={seat.name}
@@ -264,8 +265,8 @@ function SeatChip({
             background: isOver ? 'rgba(255,211,77,0.18)' : 'rgba(12,4,8,0.3)',
           }}
         >
-          <span className="text-[20px] font-light text-[#FFD34D]/60">+</span>
-          <span className="text-[11px] font-medium text-[#C79A76] mt-0.5">{t('openSeat')}</span>
+          <span className="text-[16px] sm:text-[20px] font-light text-[#FFD34D]/60">+</span>
+          <span className="text-[10px] sm:text-[11px] font-medium text-[#C79A76] mt-0.5">{t('openSeat')}</span>
         </div>
       )}
     </div>
@@ -274,10 +275,10 @@ function SeatChip({
 
 /** Vị trí 4 ghế quanh bàn preview: dưới (mình) - trái - trên - phải. */
 const SEAT_POS: React.CSSProperties[] = [
-  { left: '50%', bottom: 10, transform: 'translateX(-50%)' },
-  { left: 10, top: '50%', transform: 'translateY(-50%)' },
-  { left: '50%', top: 10, transform: 'translateX(-50%)' },
-  { right: 10, top: '50%', transform: 'translateY(-50%)' },
+  { left: '50%', bottom: 6, transform: 'translateX(-50%)' },
+  { left: 6, top: '50%', transform: 'translateY(-50%)' },
+  { left: '50%', top: 6, transform: 'translateX(-50%)' },
+  { right: 6, top: '50%', transform: 'translateY(-50%)' },
 ];
 
 /** 1 người trong hàng chờ */
@@ -502,17 +503,20 @@ export function Lobby({
                 </div>
               </div>
 
-              {onSettings && (
-                <button
-                  type="button"
-                  className="btn btn--ghost !px-2.5 !py-1 text-[15px] cursor-pointer transition-transform hover:rotate-45"
-                  onClick={() => { playSfx('click'); onSettings(); }}
-                  title="Cài đặt / Settings"
-                  aria-label="Settings"
-                >
-                  <Settings size={18} />
-                </button>
-              )}
+              <div className="flex items-center gap-1.5">
+                <FullscreenToggle />
+                {onSettings && (
+                  <button
+                    type="button"
+                    className="btn btn--ghost !px-2.5 !py-1 text-[15px] cursor-pointer transition-transform hover:rotate-45"
+                    onClick={() => { playSfx('click'); onSettings(); }}
+                    title="Cài đặt / Settings"
+                    aria-label="Settings"
+                  >
+                    <Settings size={18} />
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className={`label mt-1 flex flex-wrap items-center gap-2 tracking-[.1em] text-[#F6C79A] ${isCompact ? 'text-[13px]' : 'text-[15px]'}`}>
@@ -691,10 +695,10 @@ export function Lobby({
       </div>
 
         {/* CỘT PHẢI: Bàn preview + hàng chờ + nút bắt đầu */}
-        <div className={`flex w-[46%] flex-col ${isCompact ? 'gap-2.5 py-4 pl-2 pr-6' : 'gap-4 py-6 pl-2 pr-10'}`}>
+        <div className={`flex w-[46%] flex-col ${isCompact ? 'gap-2 py-2.5 pl-1.5 pr-3 sm:gap-2.5 sm:py-4 sm:pl-2 sm:pr-6' : 'gap-4 py-6 pl-2 pr-10'}`}>
           <DndContext sensors={sensors} onDragEnd={onDragEnd}>
             <div
-              className="relative flex-1 rounded-[18px] min-h-[190px]"
+              className="relative flex-1 rounded-[18px] min-h-[140px] sm:min-h-[190px]"
               style={{
                 background: 'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(255,190,120,.35), rgba(0,0,0,.35))',
                 border: '1px solid rgba(255,215,140,.3)',

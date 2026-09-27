@@ -9,6 +9,7 @@ import { isDiscordActivity, openDiscordInvite } from '@/src/lib/discord';
 import { useActiveTheme } from '@/src/state/room';
 import { Avatar } from './Avatar';
 import { Backdrop } from './Backdrop';
+import { FullscreenToggle } from './MobileGuard';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * MENU CHÍNH — QUẠT BÀI
@@ -34,36 +35,44 @@ const FAN_STEP = 18;
 const FAN_PUSH = 6;
 const HOVER_LIFT = -58;
 const IDLE_LIFT = 10;
-/**
- * Khoảng hở dưới đáy quạt (px theo khung thiết kế).
- *
- * KHÔNG phải 52 như bản thiết kế: lá ngoài cùng nghiêng 36° quanh tâm ảo nên
- * góc dưới của nó thò xuống thêm ~135px so với lá giữa. Để 52 thì hai lá rìa
- * bị cắt mất chân ngay trên màn hình 1440×810 của chính bản thiết kế.
- */
 const FAN_BOTTOM = 152;
+
+interface StageLayout {
+  scale: number;
+  isMobileLandscape: boolean;
+  fanBottom: number;
+}
 
 /**
  * Tỉ lệ thu phóng cả sân khấu menu theo cửa sổ.
- *
- * Quạt bài là một khối hình học cứng (góc, bán kính, độ nhô) — co giãn từng
- * thành phần bằng % sẽ làm méo góc xoè. Thu phóng NGUYÊN KHỐI giữ đúng bố cục
- * ở mọi cỡ màn hình, đổi lại phải tự đo cửa sổ.
+ * Tự động tối ưu riêng cho mobile màn hình ngang (e.g. iPhone SE 667x375) để không bị tràn màn hình.
  */
-function useStageScale(): number {
-  const [scale, setScale] = useState(1);
+function useStageScale(): StageLayout {
+  const [layout, setLayout] = useState<StageLayout>({ scale: 1, isMobileLandscape: false, fanBottom: FAN_BOTTOM });
   useEffect(() => {
     const measure = () => {
       const isDiscord = isDiscordActivity();
-      const baseScale = Math.min(window.innerWidth / DESIGN_W, window.innerHeight / DESIGN_H);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const isMob = h < 600 && w > h;
+
+      const baseScale = Math.min(w / DESIGN_W, h / DESIGN_H);
       const factor = isDiscord ? 0.85 : 1;
-      setScale(Math.max(0.38, Math.min(1, baseScale * factor)));
+
+      // Trên mobile landscape (h < 600, w > h):
+      // Thu nhỏ quạt bài để vừa vặn với màn hình điện thoại (thường h: 360-500px).
+      // Chiều cao quạt chiếm khoảng 40-44% chiều cao màn hình, chừa không gian thoáng cho tiêu đề & các nút.
+      const mobScale = Math.max(0.32, Math.min(0.45, (h * 0.42) / CARD_H));
+      const calculatedScale = isMob ? mobScale : Math.max(0.45, Math.min(1, baseScale * factor));
+      const fanBottom = isMob ? Math.max(10, Math.round(h * 0.04)) : FAN_BOTTOM * calculatedScale;
+
+      setLayout({ scale: calculatedScale, isMobileLandscape: isMob, fanBottom });
     };
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
   }, []);
-  return scale;
+  return layout;
 }
 
 /** Tên bài nhạc đang phát — audio.ts tự bốc bài nên phải nghe thông báo từ nó. */
@@ -79,13 +88,15 @@ interface FanCard {
   onClick: () => void;
 }
 
-function FanCard({ card, index, hover, onEnter }: {
-  card: FanCard; index: number; hover: number | null; onEnter: () => void;
+function FanCard({ card, index, hover, onEnter, isMobileLandscape }: {
+  card: FanCard; index: number; hover: number | null; onEnter: () => void; isMobileLandscape?: boolean;
 }) {
   const on = hover === index;
-  const base = (index - 2) * FAN_STEP;
-  const push = hover == null ? 0 : index < hover ? -FAN_PUSH : index > hover ? FAN_PUSH : 0;
-  const lift = on ? HOVER_LIFT : hover == null ? 0 : IDLE_LIFT;
+  const fanStep = isMobileLandscape ? 11 : FAN_STEP;
+  const fanPush = isMobileLandscape ? 3 : FAN_PUSH;
+  const base = (index - 2) * fanStep;
+  const push = hover == null ? 0 : index < hover ? -fanPush : index > hover ? fanPush : 0;
+  const lift = on ? (isMobileLandscape ? -42 : HOVER_LIFT) : hover == null ? 0 : IDLE_LIFT;
 
   return (
     <button
@@ -103,9 +114,8 @@ function FanCard({ card, index, hover, onEnter }: {
         padding: 0,
         border: 0,
         background: 'transparent',
-        // Tâm quay nằm dưới đáy lá gần 400px -> cả quạt quay quanh một điểm ảo
-        // dưới màn hình, đúng cảm giác cầm bài trên tay.
-        transformOrigin: `${CARD_W / 2}px 720px`,
+        // Tâm quay nằm dưới đáy lá -> cả quạt quay quanh một điểm ảo dưới màn hình
+        transformOrigin: `${CARD_W / 2}px ${isMobileLandscape ? 620 : 720}px`,
         transition: 'transform .26s cubic-bezier(.22,.9,.3,1.2)',
         transform: `rotate(${base + push}deg) translateY(${lift}px) scale(${on ? 1.07 : 1})`,
         zIndex: on ? 20 : index,
@@ -126,10 +136,37 @@ function FanCard({ card, index, hover, onEnter }: {
         <div className="display" style={{ position: 'absolute', left: 18, top: 22, width: 44, height: 44, borderRadius: 11, background: 'rgba(10,5,8,.32)', display: 'grid', placeItems: 'center', fontSize: 24, color: '#F6ECDD' }}>
           {card.glyph}
         </div>
-        <div className="display" style={{ position: 'absolute', left: 16, top: 142, width: 126, fontSize: 31, lineHeight: 1, color: '#241318', whiteSpace: 'pre-line', transform: 'rotate(-9deg)', textAlign: 'left' }}>
+        <div
+          className="display"
+          style={{
+            position: 'absolute',
+            left: 16,
+            top: 138,
+            width: 172,
+            fontSize: isMobileLandscape ? 26 : 30,
+            lineHeight: 1.05,
+            color: '#241318',
+            whiteSpace: 'pre-line',
+            transform: 'rotate(-9deg)',
+            textAlign: 'left',
+          }}
+        >
           {card.label}
         </div>
-        <div className="label" style={{ position: 'absolute', left: 18, width: 120, bottom: 26, fontSize: 12, letterSpacing: '.12em', textTransform: 'uppercase', color: '#F0DFCA', textAlign: 'left' }}>
+        <div
+          className="label"
+          style={{
+            position: 'absolute',
+            left: 18,
+            width: 170,
+            bottom: 26,
+            fontSize: 12,
+            letterSpacing: '.12em',
+            textTransform: 'uppercase',
+            color: '#F0DFCA',
+            textAlign: 'left',
+          }}
+        >
           {card.sub}
         </div>
         {/* Làm tối các lá KHÔNG được trỏ vào — không có lớp này thì cả quạt đều
@@ -158,7 +195,7 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
   const setSetting = useSettings((s) => s.set);
   const theme = useActiveTheme();
   const meta = themeMeta(theme);
-  const scale = useStageScale();
+  const { scale, isMobileLandscape, fanBottom } = useStageScale();
   const musicTitle = useMusicTitle();
 
   const [code, setCode] = useState(discordCode ?? '');
@@ -173,8 +210,10 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
     { label: t('settings'), sub: t('settingsSub'), glyph: '⚙', face: 'linear-gradient(150deg,#8A5CD6,#4B2B86)', onClick: onSettings },
   ];
 
-  const roundBtn = 'grid place-items-center rounded-full text-[#FFD79A]';
-  const roundStyle = { width: 48, height: 48, background: 'rgba(24,15,18,.8)', border: '1px solid rgba(255,196,128,.3)' };
+  const roundBtn = 'grid place-items-center rounded-full text-[#FFD79A] transition-transform hover:scale-105 active:scale-95';
+  const roundStyle = isMobileLandscape
+    ? { width: 30, height: 30, background: 'rgba(24,15,18,.8)', border: '1px solid rgba(255,196,128,.3)' }
+    : { width: 48, height: 48, background: 'rgba(24,15,18,.8)', border: '1px solid rgba(255,196,128,.3)' };
 
   return (
     <div className="absolute inset-0 overflow-hidden" style={{ background: meta.menu.base }}>
@@ -184,53 +223,96 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
       <motion.div
         initial={{ opacity: 0, y: -18 }}
         animate={{ opacity: 1, y: 0 }}
-        className="absolute left-1/2 -translate-x-1/2 text-center"
-        style={{ top: 74 * scale, transformOrigin: '50% 0' }}
+        className="absolute left-1/2 -translate-x-1/2 text-center pointer-events-auto"
+        style={{
+          top: isMobileLandscape ? 6 : 74 * scale,
+          transformOrigin: '50% 0',
+        }}
       >
         <div
           className="display"
           style={{
-            fontSize: 90 * scale, lineHeight: 0.9, letterSpacing: '-.01em',
-            color: meta.menu.ink, textShadow: meta.menu.glow,
+            fontSize: isMobileLandscape ? 28 : 90 * scale,
+            lineHeight: 0.9,
+            letterSpacing: '-.01em',
+            color: meta.menu.ink,
+            textShadow: meta.menu.glow,
             animation: 'bgFlicker 9s ease-in-out infinite',
           }}
         >
           {t('title')}
         </div>
         <div
-          className="label mt-2.5 inline-block rounded-lg"
+          className="label mt-1 inline-block rounded-lg"
           style={{
-            padding: meta.menu.tagPad, background: meta.menu.tagBg,
-            fontSize: 15 * Math.max(scale, 0.75), letterSpacing: '.5em', textTransform: 'uppercase',
-            color: meta.menu.tagInk, textShadow: meta.menu.tagGlow,
+            padding: isMobileLandscape ? '1px 6px' : meta.menu.tagPad,
+            background: meta.menu.tagBg,
+            fontSize: isMobileLandscape ? 8.5 : 15 * Math.max(scale, 0.75),
+            letterSpacing: isMobileLandscape ? '.2em' : '.5em',
+            textTransform: 'uppercase',
+            color: meta.menu.tagInk,
+            textShadow: meta.menu.tagGlow,
             animation: 'bgNeonBuzz 7s ease-in-out infinite',
           }}
         >
           {meta.tagline}
         </div>
+
+        {/* Nút chơi với bot trên mobile đặt ngay dưới biển hiệu neon rất gọn và không che quạt bài */}
+        {isMobileLandscape && (
+          <div className="mt-1.5">
+            <button
+              className="label inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-[10px] tracking-[.15em] uppercase transition-transform active:scale-95 shadow-lg"
+              style={{
+                background: 'rgba(24,15,18,.88)',
+                border: '1px solid rgba(255,211,77,.55)',
+                color: '#FFD34D',
+              }}
+              onClick={() => { playSfx('click'); onSolo(); }}
+            >
+              <span>🤖</span>
+              <span>{t('solo')}</span>
+            </button>
+          </div>
+        )}
       </motion.div>
 
       {/* QUẠT BÀI */}
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 180, damping: 26 }}
-        className="absolute left-1/2"
-        style={{ bottom: FAN_BOTTOM * scale, width: 0, height: 0, transform: `scale(${scale})` }}
-        onMouseLeave={() => setHover(null)}
+      <div
+        className="absolute left-1/2 pointer-events-auto"
+        style={{
+          bottom: fanBottom,
+          width: 0,
+          height: 0,
+          transform: `scale(${scale})`,
+          transformOrigin: '0 0',
+        }}
       >
-        {cards.map((c, i) => (
-          <FanCard key={c.label} card={c} index={i} hover={hover} onEnter={() => setHover(i)} />
-        ))}
-      </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 180, damping: 26 }}
+          style={{ width: 0, height: 0 }}
+          onMouseLeave={() => setHover(null)}
+        >
+          {cards.map((c, i) => (
+            <FanCard key={c.label} card={c} index={i} hover={hover} onEnter={() => setHover(i)} isMobileLandscape={isMobileLandscape} />
+          ))}
+        </motion.div>
+      </div>
 
       {/* Nhập mã phòng — chỉ hiện khi chọn lá "Nhập mã". */}
       {joining && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="absolute left-1/2 z-30 flex -translate-x-1/2 gap-2 rounded-2xl p-3"
-          style={{ bottom: (FAN_BOTTOM + CARD_H) * scale + 18, background: 'rgba(20,12,16,.86)', border: '1px solid rgba(255,196,128,.3)' }}
+          className="absolute left-1/2 z-30 flex -translate-x-1/2 gap-2 rounded-2xl p-2.5 max-w-[90vw]"
+          style={{
+            bottom: (fanBottom + CARD_H * scale) + 12,
+            background: 'rgba(20,12,16,.92)',
+            border: '1px solid rgba(255,196,128,.35)',
+            boxShadow: '0 8px 30px rgba(0,0,0,.6)',
+          }}
         >
           <input
             type="text"
@@ -240,41 +322,47 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
             placeholder={t('codePlaceholder')}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             onKeyDown={(e) => { if (e.key === 'Enter' && code.length === 6) onJoin(code); }}
-            className="w-44 text-center tracking-[.3em]"
+            className="w-36 sm:w-44 text-center tracking-[.3em] text-[15px]"
           />
-          <button className="btn btn--gold" disabled={code.length !== 6} onClick={() => onJoin(code)}>
+          <button className="btn btn--gold !py-1.5 !px-3.5 !text-[14px]" disabled={code.length !== 6} onClick={() => onJoin(code)}>
             {t('join')}
           </button>
         </motion.div>
       )}
 
-      {/* Thẻ người chơi */}
+      {/* Thẻ người chơi góc trên bên trái */}
       <div
-        className="absolute z-20 flex items-center gap-3 rounded-full py-2 pl-2 pr-4 text-left"
+        className={`absolute z-20 flex items-center ${isMobileLandscape ? 'gap-1.5 py-0.5 pl-0.5 pr-2.5' : 'gap-3 py-2 pl-2 pr-4'} rounded-full text-left`}
         style={{
-          left: Math.max(16, 34 * scale),
-          top: Math.max(16, 30 * scale),
-          background: 'rgba(24,15,18,.82)',
+          left: isMobileLandscape ? 8 : Math.max(16, 34 * scale),
+          top: isMobileLandscape ? 8 : Math.max(16, 30 * scale),
+          background: 'rgba(24,15,18,.86)',
           border: '1px solid rgba(255,196,128,.3)',
           boxShadow: '0 12px 28px rgba(0,0,0,.5)',
         }}
       >
         <button
           onClick={() => { playSfx('click'); onProfile(); }}
-          className="flex items-center gap-2.5 text-left focus:outline-none"
+          className="flex items-center gap-1.5 sm:gap-2 text-left focus:outline-none"
         >
           <Avatar
             name={username}
             preset={avatarPreset}
-            size={scale < 0.8 ? 44 : 54}
+            size={isMobileLandscape ? 26 : scale < 0.8 ? 44 : 54}
             self
             className="!rounded-full overflow-hidden"
           />
           <span>
-            <span className="display block leading-none text-[#FFE9C2]" style={{ fontSize: scale < 0.8 ? 18 : 22 }}>
+            <span
+              className="display block leading-none text-[#FFE9C2]"
+              style={{ fontSize: isMobileLandscape ? 12 : scale < 0.8 ? 18 : 22 }}
+            >
               {username}
             </span>
-            <span className="label block text-[11px] tracking-[.14em] text-[#C79A6C]">
+            <span
+              className="label block tracking-[.12em] text-[#C79A6C]"
+              style={{ fontSize: isMobileLandscape ? 8 : 11 }}
+            >
               {isDiscordActivity() ? t('discordHint') : t('subtitle')}
             </span>
           </span>
@@ -288,7 +376,7 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
               playSfx('click');
               void openDiscordInvite();
             }}
-            className="label ml-1 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase transition-all hover:scale-105"
+            className="label ml-1 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase transition-all hover:scale-105"
             style={{
               background: 'linear-gradient(135deg, #5865F2, #4752C4)',
               border: '1px solid rgba(255,255,255,.3)',
@@ -303,10 +391,17 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
         )}
       </div>
 
-      {/* Nút tròn góc phải: hướng dẫn, nhạc, cài đặt */}
-      <div className="absolute flex gap-2.5" style={{ right: Math.max(16, 30 * scale), top: Math.max(16, 30 * scale) }}>
+      {/* Nút góc trên bên phải: toàn màn hình, hướng dẫn, nhạc, cài đặt */}
+      <div
+        className="absolute z-20 flex items-center gap-2"
+        style={{
+          right: isMobileLandscape ? 10 : Math.max(16, 30 * scale),
+          top: isMobileLandscape ? 10 : Math.max(16, 30 * scale),
+        }}
+      >
+        <FullscreenToggle />
         <button className={roundBtn} style={roundStyle} onClick={() => { playSfx('click'); onHowTo(); }} aria-label={t('howTo')} title={t('howTo')}>
-          <span className="display text-[20px]">i</span>
+          <span className={`display ${isMobileLandscape ? 'text-[16px]' : 'text-[20px]'}`}>i</span>
         </button>
         <button className={roundBtn} style={roundStyle} onClick={() => { playSfx('click'); onSettings(); }} aria-label={ts('musicTrack')} title={ts('musicTrack')}>
           ♪
@@ -316,45 +411,51 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
         </button>
       </div>
 
-      {/* Đang phát + đổi nền nhanh */}
-      <div className="absolute flex flex-col items-end gap-2" style={{ right: Math.max(16, 30 * scale), top: Math.max(68, 94 * scale) }}>
-        {musicTitle && (
-          <div
-            className="label max-w-[280px] truncate rounded-[10px] px-4 py-2 text-[12px] tracking-[.2em] uppercase"
-            style={{ background: 'rgba(24,15,18,.7)', border: '1px solid rgba(159,216,224,.28)', color: '#9FD8E0' }}
-          >
-            {t('nowPlaying', { title: musicTitle })}
+      {/* Đang phát + đổi nền nhanh — hiển thị trên màn hình rộng / desktop */}
+      {!isMobileLandscape && (
+        <div className="absolute flex flex-col items-end gap-2" style={{ right: Math.max(16, 30 * scale), top: Math.max(68, 94 * scale) }}>
+          {musicTitle && (
+            <div
+              className="label max-w-[280px] truncate rounded-[10px] px-4 py-2 text-[12px] tracking-[.2em] uppercase"
+              style={{ background: 'rgba(24,15,18,.7)', border: '1px solid rgba(159,216,224,.28)', color: '#9FD8E0' }}
+            >
+              {t('nowPlaying', { title: musicTitle })}
+            </div>
+          )}
+          <div className="flex gap-1.5 rounded-[10px] p-1.5" style={{ background: 'rgba(24,15,18,.7)', border: '1px solid rgba(255,196,128,.24)' }}>
+            {THEMES.map((th) => (
+              <button
+                key={th.id}
+                onClick={() => { playSfx('click'); setSetting('bgTheme', th.id); }}
+                aria-label={ts(`theme${th.id[0].toUpperCase()}${th.id.slice(1)}`)}
+                title={ts(`theme${th.id[0].toUpperCase()}${th.id.slice(1)}`)}
+                className="h-[22px] w-[30px] rounded-md"
+                style={{ background: th.swatch, outline: theme === th.id ? '2px solid #FFD34D' : '1px solid rgba(255,255,255,.25)' }}
+              />
+            ))}
           </div>
-        )}
-        <div className="flex gap-1.5 rounded-[10px] p-1.5" style={{ background: 'rgba(24,15,18,.7)', border: '1px solid rgba(255,196,128,.24)' }}>
-          {THEMES.map((th) => (
-            <button
-              key={th.id}
-              onClick={() => { playSfx('click'); setSetting('bgTheme', th.id); }}
-              aria-label={ts(`theme${th.id[0].toUpperCase()}${th.id.slice(1)}`)}
-              title={ts(`theme${th.id[0].toUpperCase()}${th.id.slice(1)}`)}
-              className="h-[22px] w-[30px] rounded-md"
-              style={{ background: th.swatch, outline: theme === th.id ? '2px solid #FFD34D' : '1px solid rgba(255,255,255,.25)' }}
-            />
-          ))}
         </div>
-      </div>
+      )}
 
-      {/* Chơi offline với bot — không xứng một lá trong quạt, nhưng phải luôn thấy. */}
-      <button
-        className="label absolute left-1/2 -translate-x-1/2 rounded-[10px] px-4 py-2 text-[12px] tracking-[.2em] uppercase"
-        style={{ bottom: 46, background: 'rgba(24,15,18,.66)', border: '1px solid rgba(255,196,128,.28)', color: '#E7B98C' }}
-        onClick={() => { playSfx('click'); onSolo(); }}
-      >
-        {t('solo')}
-      </button>
+      {/* Chơi offline với bot & gợi ý — trên desktop */}
+      {!isMobileLandscape && (
+        <>
+          <button
+            className="label absolute left-1/2 -translate-x-1/2 rounded-[10px] px-4 py-2 text-[12px] tracking-[.2em] uppercase"
+            style={{ bottom: 46, background: 'rgba(24,15,18,.66)', border: '1px solid rgba(255,196,128,.28)', color: '#E7B98C' }}
+            onClick={() => { playSfx('click'); onSolo(); }}
+          >
+            {t('solo')}
+          </button>
 
-      <div
-        className="label absolute left-1/2 -translate-x-1/2 text-[12px] tracking-[.32em] uppercase"
-        style={{ bottom: 16, color: '#8A6A52' }}
-      >
-        {t('fanHint')}
-      </div>
+          <div
+            className="label absolute left-1/2 -translate-x-1/2 text-[12px] tracking-[.32em] uppercase"
+            style={{ bottom: 16, color: '#8A6A52' }}
+          >
+            {t('fanHint')}
+          </div>
+        </>
+      )}
 
       {busy && (
         <div className="label absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-lg bg-black/60 px-4 py-2 text-[12px] text-[#FFD34D]">

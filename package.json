@@ -9,11 +9,12 @@
     "url": "https://github.com/konnn04"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @u-no/server --filter @u-no/client --filter @u-no/gateway dev",
+    "build:packages": "pnpm --recursive --filter \"./packages/**\" build",
+    "dev": "pnpm build:packages && pnpm --parallel --filter @u-no/server --filter @u-no/client --filter @u-no/gateway dev",
     "dev:client": "pnpm --filter @u-no/client dev",
-    "dev:server": "pnpm --filter @u-no/server dev",
+    "dev:server": "pnpm build:packages && pnpm --filter @u-no/server dev",
     "dev:gateway": "pnpm --filter @u-no/gateway dev",
-    "build": "node scripts/sync-version.mjs && pnpm --recursive --filter \"./packages/**\" build && pnpm --filter @u-no/server build && pnpm --filter @u-no/client build",
+    "build": "node scripts/sync-version.mjs && pnpm build:packages && pnpm --filter @u-no/server build && pnpm --filter @u-no/client build",
     "typecheck": "node scripts/sync-version.mjs && pnpm --recursive typecheck",
     "lint": "pnpm --recursive lint",
     "stamp": "node scripts/sync-version.mjs --stamp",

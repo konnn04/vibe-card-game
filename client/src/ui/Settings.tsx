@@ -81,12 +81,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-40 grid place-items-center p-6"
+      className="fixed inset-0 z-40 grid place-items-center p-3 sm:p-6"
       style={{ background: 'rgba(10,4,16,.72)' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="scroll-y max-h-[88vh] w-[min(94vw,560px)] rounded-[20px] p-7"
+        className="scroll-y max-h-[92vh] w-[min(94vw,560px)] rounded-[20px] p-4 sm:p-7"
         style={{ background: 'rgba(36,21,54,.92)', border: '1px solid rgba(255,255,255,.12)' }}
       >
         <div className="display text-[34px] leading-none text-[#FFF3DA]">{t('title')}</div>

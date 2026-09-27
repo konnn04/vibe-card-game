@@ -142,13 +142,16 @@ export function ChatInputBar() {
 }
 
 /** Nút nhỏ kích hoạt chat cho chuột/cảm ứng */
-export function ChatTriggerButton() {
+export function ChatTriggerButton({ size = 44 }: { size?: number } = {}) {
   const setInputOpen = useChat((s) => s.setInputOpen);
+  const iconSize = size <= 34 ? 14 : 18;
   return (
     <button
       type="button"
-      className="grid h-11 w-11 place-items-center rounded-full border text-[18px] transition-transform hover:scale-110 cursor-pointer pointer-events-auto"
+      className="grid place-items-center rounded-full border transition-transform hover:scale-110 cursor-pointer pointer-events-auto"
       style={{
+        width: size,
+        height: size,
         background: 'rgba(12,4,8,.6)',
         borderColor: 'rgba(255,215,140,.45)',
         color: '#FFE0B3',
@@ -157,7 +160,7 @@ export function ChatTriggerButton() {
       title="Trò chuyện / Chat (Phím Enter)"
       aria-label="Chat"
     >
-      <MessageSquare size={18} />
+      <MessageSquare size={iconSize} />
     </button>
   );
 }

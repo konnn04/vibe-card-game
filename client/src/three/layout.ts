@@ -188,8 +188,8 @@ export function fanTransform(
   // dưới con trỏ chuột, khiến pointerOut tự kích hoạt ngay khi vừa hover xong
   // rồi lá rơi xuống lại kích hoạt hover lại — chớp liên tục ("mất luôn" khi
   // hover, đúng lỗi báo, nhất là lá ở biên quạt). Kết hợp với debounce tắt
-  // hover ở Cards.tsx để hết hẳn hiện tượng chớp.
-  const hoverLift = opts.isHovered ? 0.2 : 0;
+  // Lá đang hover/chạm tay: nhấc theo trục Y thế giới để người chơi thấy rõ lá bài
+  const hoverLift = opts.isHovered ? 0.22 : 0;
 
   return {
     p: new THREE.Vector3(

@@ -16,6 +16,20 @@ import { UI } from '@/src/config';
 import { isTakenOver } from '@/src/lib/takeover';
 import { useChat } from '@/src/state/chat';
 import { ChatBubble, ChatTriggerButton } from './InGameChat';
+import { FullscreenToggle } from './MobileGuard';
+
+function useIsMobileLandscape(): boolean {
+  const [isMob, setIsMob] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      setIsMob(window.innerHeight < 560 && window.innerWidth > window.innerHeight);
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  return isMob;
+}
 
 function useSecondsLeft(turnKey: number, animating: boolean, seconds: number) {
   const [left, setLeft] = useState(seconds);
@@ -52,13 +66,14 @@ function useSecondsLeft(turnKey: number, animating: boolean, seconds: number) {
  * người chơi không phải nhớ, nhìn là biết.
  */
 function ActionButton({
-  children, onClick, tone, pulse, hotkey,
+  children, onClick, tone, pulse, hotkey, isCompact,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   tone: 'gold' | 'plain' | 'red';
   pulse?: boolean;
   hotkey: string;
+  isCompact?: boolean;
 }) {
   const skin = {
     gold: { background: 'linear-gradient(135deg, rgba(255,211,77,.32), rgba(26,10,16,.88))', borderColor: '#FFD34D', color: '#FFF3DA' },
@@ -67,32 +82,35 @@ function ActionButton({
   }[tone];
   return (
     <button
-      className={`label flex items-center gap-2.5 rounded-[26px] border-2 px-5 py-2 text-[17px] transition-all hover:scale-[1.04] ${pulse ? 'shadow-[0_0_26px_rgba(255,211,77,0.8)] ring-2 ring-[#FFD34D]' : 'shadow-[0_4px_18px_rgba(0,0,0,.55)]'
+      className={`label flex items-center gap-2 rounded-[26px] border-2 ${isCompact ? 'px-3.5 py-1 text-[13px]' : 'px-5 py-2 text-[17px]'
+        } transition-all hover:scale-[1.04] active:scale-95 cursor-pointer ${pulse ? 'shadow-[0_0_26px_rgba(255,211,77,0.8)] ring-2 ring-[#FFD34D]' : 'shadow-[0_4px_18px_rgba(0,0,0,.55)]'
         }`}
       style={skin}
       onClick={onClick}
     >
       {children}
-      <kbd
-        className="grid h-[22px] min-w-[22px] place-items-center rounded-[6px] px-1 text-[12px] font-bold"
-        style={{ background: 'rgba(0,0,0,.45)', border: '1px solid rgba(255,215,140,.4)' }}
-      >
-        {hotkey}
-      </kbd>
+      {!isCompact && (
+        <kbd
+          className="grid h-[22px] min-w-[22px] place-items-center rounded-[6px] px-1 text-[12px] font-bold"
+          style={{ background: 'rgba(0,0,0,.45)', border: '1px solid rgba(255,215,140,.4)' }}
+        >
+          {hotkey}
+        </kbd>
+      )}
     </button>
   );
 }
 
 /** Đồng hồ lượt = vòng conic quanh avatar (mock 03) — 1 phần tử, cập nhật 4 lần/giây. */
-function TurnDial({ left, seconds, active, children }: {
-  left: number; seconds: number; active: boolean; children: React.ReactNode;
+function TurnDial({ left, seconds, active, size = 86, children }: {
+  left: number; seconds: number; active: boolean; size?: number; children: React.ReactNode;
 }) {
   const pct = Math.max(0, Math.min(1, left / seconds)) * 100;
   const ring = active ? (left < 5 ? '#E23B2E' : '#FFD34D') : 'rgba(255,255,255,.35)';
   return (
     <div
       className="grid place-items-center rounded-full"
-      style={{ width: 86, height: 86, background: `conic-gradient(${ring} 0 ${pct}%, rgba(0,0,0,.45) ${pct}% 100%)` }}
+      style={{ width: size, height: size, background: `conic-gradient(${ring} 0 ${pct}%, rgba(0,0,0,.45) ${pct}% 100%)` }}
     >
       {children}
     </div>
@@ -100,6 +118,7 @@ function TurnDial({ left, seconds, active, children }: {
 }
 
 export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings: () => void }) {
+  const isMobile = useIsMobileLandscape();
   const t = useTranslations('game');
   const tSettings = useTranslations('settings');
   const state = useMatch((s) => s.state);
@@ -263,10 +282,10 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
 
   return (
     <div className="pointer-events-none absolute inset-0 select-none">
-      <div className="pointer-events-auto absolute left-6 top-6 flex items-center gap-2">
-        <button className="btn btn--ghost !py-2 !text-[17px]" onClick={onExit}>‹ {t('backToMenu')}</button>
+      <div className={`pointer-events-auto absolute ${isMobile ? 'left-2.5 top-2 gap-1.5' : 'left-6 top-6 gap-2'} flex items-center`}>
+        <button className={`btn btn--ghost ${isMobile ? '!py-1 !px-2.5 !text-[13px]' : '!py-2 !text-[17px]'}`} onClick={onExit}>‹ {t('backToMenu')}</button>
         <button
-          className="grid h-[38px] w-[38px] place-items-center rounded-full text-[18px] text-[#FFE2A8]"
+          className={`grid place-items-center rounded-full text-[#FFE2A8] ${isMobile ? 'h-[30px] w-[30px] text-[15px]' : 'h-[38px] w-[38px] text-[18px]'}`}
           style={{ background: 'rgba(20,8,12,.55)', border: '2px solid rgba(255,215,140,.5)' }}
           onClick={() => { playSfx('click'); onSettings(); }}
           aria-label={tSettings('title')}
@@ -274,13 +293,11 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
         >
           ⚙
         </button>
-        <span className="label rounded-[10px] border border-[color:var(--line-2)] bg-[color:var(--panel-2)] px-3 py-1.5 text-[13px] text-[color:var(--gold)]">
-          {state.side === 'dark' ? t('darkSide') : t('lightSide')}
-        </span>
+        <FullscreenToggle />
         {roomCode && (
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-[10px] border px-3 py-1.5 text-[13px] font-mono font-bold transition-all hover:scale-105 active:scale-95 cursor-pointer shadow"
+            className={`flex items-center gap-1.5 rounded-[10px] border ${isMobile ? 'px-2 py-1 text-[11px]' : 'px-3 py-1.5 text-[13px]'} font-mono font-bold transition-all hover:scale-105 active:scale-95 cursor-pointer shadow`}
             style={{
               background: 'rgba(20,8,12,.65)',
               borderColor: 'rgba(255,215,140,.5)',
@@ -295,14 +312,13 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
             }}
             title="Nhấp để sao chép liên kết mời bạn bè"
           >
-            <span className="text-[11px] text-[#FFD34D]/75 font-sans">Mã:</span>
             <span>{copiedCode ? 'Copied!' : roomCode}</span>
           </button>
         )}
         {state.pending && (
           <motion.span
             initial={{ scale: 0.8 }} animate={{ scale: 1 }}
-            className="label rounded-[10px] bg-[color:var(--c-red)] px-3 py-1.5 text-[13px] text-white"
+            className={`label rounded-[10px] bg-[color:var(--c-red)] ${isMobile ? 'px-2 py-1 text-[11px]' : 'px-3 py-1.5 text-[13px]'} text-white`}
           >
             {state.pending.value === 'drawColor'
               ? t('stackColor', { color: WHEEL_LABEL[state.pending.color] ?? state.pending.color })
@@ -311,11 +327,11 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
         )}
       </div>
 
-      <div className="absolute right-6 top-6 flex flex-col items-end gap-1.5">
+      <div className={`absolute ${isMobile ? 'right-2.5 top-2.5 gap-1' : 'right-6 top-6 gap-1.5'} flex flex-col items-end`}>
         {state.players.map((p) => (
           <div
             key={p.id}
-            className="display rounded-lg px-3 py-1 text-[17px]"
+            className={`display rounded-lg ${isMobile ? 'px-2 py-0.5 text-[12px]' : 'px-3 py-1 text-[17px]'}`}
             style={{
               background: p.id === myId ? 'linear-gradient(90deg,#FFB534,#FF8A2B)' : 'rgba(12,4,8,.55)',
               color: p.id === myId ? '#2A1508' : '#FFF3DA',
@@ -324,7 +340,7 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
           >
             {isTakenOver(p) && (
               <span
-                className="mr-1.5 rounded px-1 text-[10px] font-bold align-middle"
+                className="mr-1 rounded px-1 text-[9px] font-bold align-middle"
                 style={{ background: 'rgba(226,72,59,.9)', color: '#fff' }}
                 title={t('aiTookOver', { name: p.name })}
               >
@@ -336,7 +352,7 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
         ))}
       </div>
 
-      <div className="absolute left-1/2 top-[84px] flex -translate-x-1/2 items-center gap-2">
+      <div className={`absolute left-1/2 ${isMobile ? 'top-3 scale-90' : 'top-[84px]'} flex -translate-x-1/2 items-center gap-2`}>
         <DirectionBadge direction={state.direction} />
         <motion.div
           key={`${current?.id}-${state.turn}`}
@@ -344,7 +360,7 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
           animate={{ opacity: 1, y: 0 }}
         >
           <div
-            className="label rounded-[20px] border px-5 py-1.5 text-[15px]"
+            className={`label rounded-[20px] border ${isMobile ? 'px-3 py-1 text-[12px]' : 'px-5 py-1.5 text-[15px]'}`}
             style={{
               background: 'rgba(12,4,8,.6)',
               borderColor: myTurn ? '#FFD34D' : 'rgba(255,215,140,.45)',
@@ -365,13 +381,13 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
 
       {/* HUD của mình: vòng đếm ngược quanh avatar */}
       {seated && (
-        <div className="absolute bottom-8 left-8 flex items-center gap-3">
+        <div className={`absolute ${isMobile ? 'bottom-2.5 left-3 gap-2' : 'bottom-8 left-8 gap-3'} flex items-center`}>
           {myChat && (
             <div className="pointer-events-none absolute -top-12 left-2 z-30 whitespace-nowrap">
               <ChatBubble message={myChat.message} />
             </div>
           )}
-          <TurnDial left={left} seconds={state.rules.turnSeconds} active={myTurn}>
+          <TurnDial left={left} seconds={state.rules.turnSeconds} active={myTurn} size={isMobile ? 54 : 86}>
             <div className="relative">
               {(() => {
                 const mine = fx.filter((f) => f.kind === 'emote' && f.payload.t === 'emote' && f.payload.playerId === myId);
@@ -380,7 +396,7 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
                 return (
                   <div
                     key={last.id}
-                    className="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 text-[26px]"
+                    className={`pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 ${isMobile ? 'text-[18px]' : 'text-[26px]'}`}
                     style={{ animation: 'emotePop 2s ease-out forwards', filter: 'drop-shadow(0 3px 8px rgba(0,0,0,.6))' }}
                   >
                     {last.payload.emote}
@@ -399,14 +415,14 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
                     className="pointer-events-none absolute inset-0 z-10 grid place-items-center"
                     style={{ animation: 'banPop 1.2s ease-out forwards' }}
                   >
-                    <Ban size={44} strokeWidth={3} color="#fff" style={{ filter: 'drop-shadow(0 0 6px rgba(226,59,46,.9)) drop-shadow(0 2px 4px rgba(0,0,0,.7))' }} />
+                    <Ban size={isMobile ? 28 : 44} strokeWidth={3} color="#fff" style={{ filter: 'drop-shadow(0 0 6px rgba(226,59,46,.9)) drop-shadow(0 2px 4px rgba(0,0,0,.7))' }} />
                   </div>
                 );
               })()}
               <Avatar
                 name={me?.name ?? ''}
                 preset={avatarPreset}
-                size={myTurn ? 78 : 70}
+                size={isMobile ? (myTurn ? 48 : 42) : (myTurn ? 78 : 70)}
                 self
                 className={`seat__avatar !rounded-full ${myTurn ? 'avatar--turn' : ''}`}
               />
@@ -414,24 +430,24 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
           </TurnDial>
           <div>
             <div
-              className="display inline-block rounded-[7px] px-3.5 py-1 text-[20px]"
+              className={`display inline-block rounded-[7px] ${isMobile ? 'px-2 py-0.5 text-[14px]' : 'px-3.5 py-1 text-[20px]'}`}
               style={{ background: 'linear-gradient(90deg,#FFB534,#FF8A2B)', color: '#2A1508' }}
             >
               {me?.name}
             </div>
-            <div className="label mt-1.5 text-[15px] text-[#FFE0B3]">
+            <div className={`label ${isMobile ? 'mt-0.5 text-[11px]' : 'mt-1.5 text-[15px]'} text-[#FFE0B3]`}>
               {t('cards', { n: me?.hand.length ?? 0 })} · {me?.score ?? 0}
             </div>
           </div>
-          <EmotePicker onPick={(emote) => act({ type: 'EMOTE', playerId: myId, emote })} />
-          <ChatTriggerButton />
+          <EmotePicker size={isMobile ? 32 : 44} onPick={(emote) => act({ type: 'EMOTE', playerId: myId, emote })} />
+          <ChatTriggerButton size={isMobile ? 32 : 44} />
         </div>
       )}
 
       {!seated && (
-        <div className="pointer-events-auto absolute bottom-8 left-8 flex items-center gap-3">
+        <div className={`pointer-events-auto absolute ${isMobile ? 'bottom-2.5 left-3 gap-2' : 'bottom-8 left-8 gap-3'} flex items-center`}>
           <div
-            className="label rounded-[14px] px-5 py-3 text-[14px] tracking-[.18em]"
+            className={`label rounded-[14px] ${isMobile ? 'px-3 py-1.5 text-[12px]' : 'px-5 py-3 text-[14px]'} tracking-[.18em]`}
             style={{ background: 'rgba(12,4,8,.66)', border: '1px solid rgba(255,215,140,.35)', color: '#FFE0B3' }}
           >
             {t('spectating')}
@@ -439,13 +455,13 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
               {queuePos >= 0 ? t('queuePos', { n: queuePos + 1 }) : t('queueWait')}
             </div>
           </div>
-          <ChatTriggerButton />
+          <ChatTriggerButton size={isMobile ? 32 : 44} />
         </div>
       )}
 
       {/* RUSH + rút bài: dồn về góc phải để không đè lên quạt bài */}
       {seated && (
-        <div className="pointer-events-auto absolute bottom-8 right-9 flex flex-col items-center gap-3">
+        <div className={`pointer-events-auto absolute ${isMobile ? 'bottom-2.5 right-3 gap-2' : 'bottom-8 right-9 gap-3'} flex flex-col items-center`}>
           <AnimatePresence>
             {me && me.hand.length === 1 && !me.calledRush && (
               <motion.button
@@ -455,11 +471,12 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
                 exit={{ scale: 0, opacity: 0 }}
                 whileTap={{ scale: 0.92 }}
                 onClick={() => { playSfx('rush'); act({ type: 'CALL_RUSH', playerId: myId }); }}
-                className="display grid place-items-center rounded-full text-[38px]"
+                className={`display grid place-items-center rounded-full ${isMobile ? 'text-[22px]' : 'text-[38px]'}`}
                 style={{
-                  width: 132, height: 132,
+                  width: isMobile ? 74 : 132,
+                  height: isMobile ? 74 : 132,
                   background: 'radial-gradient(circle at 40% 34%,#FFE27A,#F0A21B 62%,#B45A05)',
-                  border: '6px solid #fff',
+                  border: isMobile ? '3px solid #fff' : '6px solid #fff',
                   boxShadow: '0 18px 36px rgba(0,0,0,.5), 0 0 44px rgba(255,190,80,.6)',
                   color: '#5A2A05',
                   animation: 'pulseGlow 2.2s ease-in-out infinite',
@@ -467,9 +484,11 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
               >
                 <span className="grid place-items-center leading-none">
                   {t('rush')}
-                  <kbd className="label mt-1 rounded-[6px] px-1.5 text-[11px] font-bold" style={{ background: 'rgba(0,0,0,.3)', color: '#5A2A05' }}>
-                    Space
-                  </kbd>
+                  {!isMobile && (
+                    <kbd className="label mt-1 rounded-[6px] px-1.5 text-[11px] font-bold" style={{ background: 'rgba(0,0,0,.3)', color: '#5A2A05' }}>
+                      Space
+                    </kbd>
+                  )}
                 </span>
               </motion.button>
             )}
@@ -479,12 +498,14 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="btn"
+                className={`btn ${isMobile ? '!py-1.5 !px-3 !text-[13px]' : ''}`}
                 style={{ background: 'linear-gradient(#E23B2E,#A5231A)', borderColor: '#FFD34D', color: '#fff' }}
                 onClick={() => act({ type: 'CATCH_RUSH', playerId: myId, targetId: catchable.id })}
               >
                 {t('catch', { name: catchable.name })}
-                <kbd className="label ml-2 rounded-[6px] px-1.5 text-[11px] font-bold" style={{ background: 'rgba(0,0,0,.35)' }}>Space</kbd>
+                {!isMobile && (
+                  <kbd className="label ml-2 rounded-[6px] px-1.5 text-[11px] font-bold" style={{ background: 'rgba(0,0,0,.35)' }}>Space</kbd>
+                )}
               </motion.button>
             )}
           </AnimatePresence>
@@ -497,29 +518,33 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
           XUẤT HIỆN khi thật sự dùng được — không hiện nút mờ để bấm không ăn,
           vì đó chính là kiểu "bấm mà game im re" gây hiểu nhầm treo máy. */}
       {seated && (canDraw || canPass || canChallenge || !!sCard) && (
-        <div className="pointer-events-auto absolute bottom-[330px] left-1/2 flex -translate-x-1/2 items-center gap-3">
+        <div
+          className="pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-center gap-2"
+          style={{ bottom: isMobile ? 126 : 330 }}
+        >
           {canDraw && (
             <ActionButton
               tone={needDrawPrompt ? 'gold' : 'plain'}
               pulse={needDrawPrompt}
               hotkey="E"
+              isCompact={isMobile}
               onClick={() => act({ type: 'DRAW', playerId: myId })}
             >
               {t('draw')}
             </ActionButton>
           )}
           {!!sCard && (
-            <ActionButton tone='gold' pulse hotkey="S" onClick={playS}>
+            <ActionButton tone='gold' pulse hotkey="S" isCompact={isMobile} onClick={playS}>
               {isJump ? t('jumpIn') : t('stackUp')}
             </ActionButton>
           )}
           {canPass && (
-            <ActionButton tone='plain' hotkey="Q" onClick={() => act({ type: 'PASS', playerId: myId })}>
+            <ActionButton tone='plain' hotkey="Q" isCompact={isMobile} onClick={() => act({ type: 'PASS', playerId: myId })}>
               {t('pass')}
             </ActionButton>
           )}
           {canChallenge && (
-            <ActionButton tone='red' hotkey="D" onClick={() => act({ type: 'CHALLENGE', playerId: myId })}>
+            <ActionButton tone='red' hotkey="D" isCompact={isMobile} onClick={() => act({ type: 'CHALLENGE', playerId: myId })}>
               {t('challenge')}
             </ActionButton>
           )}
@@ -549,10 +574,11 @@ const EMOTES = ['❤️', '😂', '😢', '😮', '😡', '👏'];
  * luật ván đấu, xem engine.ts case 'EMOTE'). Hiển thị ở SeatHuds (Scene.tsx)
  * cho mọi người chơi, kể cả online qua room action route có sẵn.
  */
-function EmotePicker({ onPick }: { onPick: (emote: string) => void }) {
+function EmotePicker({ onPick, size = 44 }: { onPick: (emote: string) => void; size?: number }) {
   const t = useTranslations('settings');
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const iconSize = size <= 34 ? 'text-[15px]' : 'text-[20px]';
 
   /**
    * Đóng khi bấm ra ngoài — cần cho cảm ứng, nơi không có `mouseleave` nên nếu
@@ -575,8 +601,8 @@ function EmotePicker({ onPick }: { onPick: (emote: string) => void }) {
       onMouseLeave={() => setOpen(false)}
     >
       <button
-        className="grid h-11 w-11 place-items-center rounded-full border text-[20px] transition-transform hover:scale-110"
-        style={{ background: 'rgba(12,4,8,.6)', borderColor: 'rgba(255,215,140,.45)' }}
+        className={`grid place-items-center rounded-full border ${iconSize} transition-transform hover:scale-110`}
+        style={{ width: size, height: size, background: 'rgba(12,4,8,.6)', borderColor: 'rgba(255,215,140,.45)' }}
         // MỞ chứ không TOGGLE: rê chuột tới đã mở sẵn rồi, nếu bấm lại toggle
         // thì cú bấm đầu tiên lại ĐÓNG dải icon — đúng lỗi "mỗi lần bấm nó lại
         // ẩn đi". Đóng đã có: chọn icon, rời chuột, hoặc bấm ra ngoài.
@@ -591,7 +617,7 @@ function EmotePicker({ onPick }: { onPick: (emote: string) => void }) {
             initial={{ opacity: 0, y: 8, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.9 }}
-            className="absolute bottom-[52px] left-0 flex gap-1 rounded-2xl border p-1.5"
+            className={`absolute ${size <= 34 ? 'bottom-[40px]' : 'bottom-[52px]'} left-0 flex gap-1 rounded-2xl border p-1.5`}
             style={{ background: 'rgba(12,4,8,.85)', borderColor: 'rgba(255,215,140,.45)' }}
           >
             {EMOTES.map((e, idx) => (

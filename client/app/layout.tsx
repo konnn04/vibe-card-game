@@ -14,7 +14,8 @@ const barlow = Barlow_Semi_Condensed({
  * Thiếu biến môi trường thì rơi về localhost — vẫn chạy được, chỉ là link chia
  * sẻ sẽ trỏ về máy mình, nên nhớ đặt biến này khi deploy.
  */
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+const rawSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+const SITE_URL = rawSiteUrl || 'http://localhost:3000';
 
 const DESCRIPTION =
   'Ú Nồ — game bài party với bàn chơi 3D. Chơi bộ cổ điển hoặc bộ Flip hai mặt, '

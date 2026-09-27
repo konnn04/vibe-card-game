@@ -43,10 +43,22 @@ const FLIP: Slide[] = [
   { key: 'flipWildDraw', light: { atlas: 'flipLight', name: 'wild_draw_2' }, dark: { atlas: 'flipDark', name: 'draw_until_dark' } },
 ];
 
+function useIsCompactHeight(): boolean {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const check = () => setCompact(window.innerHeight < 520);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  return compact;
+}
+
 export function HowToPlay({ onClose }: { onClose: () => void }) {
   const t = useTranslations('howto');
   const [deck, setDeck] = useState<'classic' | 'flip'>('classic');
   const [i, setI] = useState(0);
+  const isCompact = useIsCompactHeight();
   const slides = deck === 'classic' ? CLASSIC : FLIP;
   const slide = slides[Math.min(i, slides.length - 1)];
 
@@ -66,12 +78,10 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  // GỌI HÀM trả JSX, không khai component trong thân render — component tạo
-  // lúc render bị mất state mỗi lần cha render lại (React Compiler chặn).
   const renderTab = (id: 'classic' | 'flip', label: string) => (
     <button
       key={id}
-      className="label rounded-[14px] px-5 py-2.5 text-[15px] transition-colors"
+      className={`label rounded-[12px] ${isCompact ? 'px-3 py-1 text-[12px]' : 'px-5 py-2.5 text-[15px]'} transition-colors`}
       style={
         deck === id
           ? { background: 'linear-gradient(140deg,#FFD34D,#FF9E2C)', color: '#2A1508' }
@@ -83,73 +93,75 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
     </button>
   );
 
+  const cardH = isCompact ? 96 : 220;
+
   return (
     <div
-      className="absolute inset-0 z-50 grid place-items-center p-4"
+      className="absolute inset-0 z-50 grid place-items-center p-2 sm:p-4"
       style={{ background: 'rgba(10,4,16,.78)' }}
       onClick={onClose}
     >
       <div
-        className="relative w-[min(94vw,760px)] rounded-[26px] p-6"
+        className={`relative max-h-[94vh] overflow-y-auto w-[min(94vw,620px)] rounded-[20px] ${isCompact ? 'p-3' : 'p-6'}`}
         style={{ background: 'rgba(36,21,54,.96)', border: '1px solid rgba(255,255,255,.14)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <button
-          className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full"
+          className={`absolute ${isCompact ? 'right-2.5 top-2.5 h-7 w-7' : 'right-4 top-4 h-9 w-9'} grid place-items-center rounded-full`}
           style={{ background: 'rgba(255,255,255,.1)', color: '#EDE0FA' }}
           onClick={onClose}
           aria-label={t('close')}
         >
-          <X size={18} />
+          <X size={isCompact ? 15 : 18} />
         </button>
 
-        <div className="display mb-4 text-[28px] text-[#FFD34D]">{t('title')}</div>
-        <div className="mb-5 flex gap-2.5">
+        <div className={`display ${isCompact ? 'mb-1.5 text-[18px]' : 'mb-4 text-[28px]'} text-[#FFD34D]`}>{t('title')}</div>
+        <div className={`${isCompact ? 'mb-2' : 'mb-5'} flex gap-2`}>
           {renderTab('classic', t('tabClassic'))}
           {renderTab('flip', t('tabFlip'))}
         </div>
 
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-2 sm:gap-4">
           <button
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-full"
+            className={`grid ${isCompact ? 'h-8 w-8' : 'h-11 w-11'} shrink-0 place-items-center rounded-full`}
             style={{ background: 'rgba(255,255,255,.1)', color: '#EDE0FA' }}
             onClick={() => go(-1)}
             aria-label={t('prev')}
           >
-            <ChevronLeft size={22} />
+            <ChevronLeft size={isCompact ? 18 : 22} />
           </button>
 
-          <div className="flex min-h-[236px] flex-1 items-center gap-5">
-            <div className="flex shrink-0 gap-3">
-              <CardPhoto atlas={slide.light.atlas} name={slide.light.name} height={220} className="rounded-[12px]"
-                style={{ boxShadow: '0 14px 30px rgba(0,0,0,.5)' }} />
+          <div className={`flex ${isCompact ? 'min-h-[105px]' : 'min-h-[236px]'} flex-1 items-center gap-3 sm:gap-5`}>
+            <div className="flex shrink-0 gap-2 sm:gap-3">
+              <CardPhoto atlas={slide.light.atlas} name={slide.light.name} height={cardH} className="rounded-[8px] sm:rounded-[12px]"
+                style={{ boxShadow: '0 8px 20px rgba(0,0,0,.5)' }} />
               {slide.dark && (
-                <CardPhoto atlas={slide.dark.atlas} name={slide.dark.name} height={220} className="rounded-[12px]"
-                  style={{ boxShadow: '0 14px 30px rgba(0,0,0,.5)' }} />
+                <CardPhoto atlas={slide.dark.atlas} name={slide.dark.name} height={cardH} className="rounded-[8px] sm:rounded-[12px]"
+                  style={{ boxShadow: '0 8px 20px rgba(0,0,0,.5)' }} />
               )}
             </div>
-            <div>
-              <div className="display text-[24px] text-[#FFF3DA]">{t(`${slide.key}Title`)}</div>
-              <p className="mt-2 text-[14px] font-semibold leading-relaxed text-[#C9B3E6]">{t(`${slide.key}Body`)}</p>
+            <div className="min-w-0 flex-1">
+              <div className={`display ${isCompact ? 'text-[16px]' : 'text-[24px]'} text-[#FFF3DA]`}>{t(`${slide.key}Title`)}</div>
+              <p className={`mt-1 ${isCompact ? 'text-[11px] leading-snug' : 'text-[14px] leading-relaxed'} font-semibold text-[#C9B3E6]`}>{t(`${slide.key}Body`)}</p>
             </div>
           </div>
 
           <button
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-full"
+            className={`grid ${isCompact ? 'h-8 w-8' : 'h-11 w-11'} shrink-0 place-items-center rounded-full`}
             style={{ background: 'rgba(255,255,255,.1)', color: '#EDE0FA' }}
             onClick={() => go(1)}
             aria-label={t('next')}
           >
-            <ChevronRight size={22} />
+            <ChevronRight size={isCompact ? 18 : 22} />
           </button>
         </div>
 
-        <div className="mt-5 flex justify-center gap-2">
+        <div className={`flex justify-center gap-1.5 ${isCompact ? 'mt-2' : 'mt-5'}`}>
           {slides.map((s, k) => (
             <button
               key={s.key}
-              className="h-2.5 rounded-full transition-all"
-              style={{ width: k === i ? 26 : 10, background: k === i ? '#FFD34D' : 'rgba(255,255,255,.22)' }}
+              className={`${isCompact ? 'h-2' : 'h-2.5'} rounded-full transition-all`}
+              style={{ width: k === i ? (isCompact ? 18 : 26) : (isCompact ? 7 : 10), background: k === i ? '#FFD34D' : 'rgba(255,255,255,.22)' }}
               onClick={() => { playSfx('click'); setI(k); }}
               aria-label={`${k + 1}/${slides.length}`}
             />
