@@ -130,6 +130,14 @@ export interface ChatDto {
   senderName?: string;
 }
 
+/** Lý do bị mời khỏi phòng — client dùng để chọn câu thông báo. */
+export type KickReason = 'host' | 'afk';
+
+export interface KickedDto {
+  code: string;
+  reason: KickReason;
+}
+
 export interface ServerChatDto {
   playerId: string;
   senderId?: string;

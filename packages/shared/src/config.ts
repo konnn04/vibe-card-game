@@ -78,6 +78,11 @@ export const NET = {
   lobbyDisconnectGraceMs: 60_000,
   /** Thời gian dọn phòng trống không còn ai (5 phút). */
   emptyRoomTtlMs: 5 * 60_000,
+  /**
+   * Người chơi vẫn online nhưng để hết giờ liên tiếp chừng này lượt thì bị coi
+   * là AFK: máy đánh thay ngay, và sang ván sau bị mời khỏi phòng.
+   */
+  afkTimeoutStrikes: 2,
 } as const;
 
 /** Giao diện (ms). */

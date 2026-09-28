@@ -15,5 +15,7 @@ export interface RoomRecord {
   isPublic: boolean;
   bgTheme: string;
   scores: Record<string, number>;
+  /** Số lượt hết giờ LIÊN TIẾP của từng người thật (dù vẫn online) — xem NET.afkTimeoutStrikes. */
+  afkStrikes?: Record<string, number>;
   updatedAt: number;
 }

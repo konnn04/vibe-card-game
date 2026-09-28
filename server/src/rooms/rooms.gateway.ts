@@ -18,6 +18,8 @@ import {
   type ChatDto,
   type CreateRoomDto,
   type JoinRoomDto,
+  type KickedDto,
+  type KickReason,
   type LeaveOpDto,
   type QuickMatchDto,
   type ReconnectDto,
@@ -60,6 +62,7 @@ export class RoomsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     this.roomsService.onBroadcastRoom = (code, events) => this.broadcastRoom(code, events);
     this.roomsService.onBroadcastPresence = (code) => this.broadcastPresence(code);
     this.roomsService.onBroadcastAvatars = (code) => this.broadcastAvatars(code);
+    this.roomsService.onKicked = (code, playerId, reason) => this.notifyKicked(code, playerId, reason);
     this.logger.log('RoomsGateway initialized');
   }
 
@@ -122,6 +125,23 @@ export class RoomsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         }
       }
     }
+  }
+
+  /**
+   * Báo riêng cho người bị mời khỏi phòng rồi rút mọi socket của họ khỏi room —
+   * để họ không nhận tiếp broadcast, và lúc socket đóng thì không bị ghi ngược
+   * presence vào phòng họ không còn ở trong.
+   */
+  notifyKicked(code: string, playerId: string, reason: KickReason) {
+    const upperCode = code.toUpperCase();
+    const sockets = this.playerSockets.get(playerId);
+    if (!sockets) return;
+    for (const sid of sockets) {
+      this.server.to(sid).emit(SOCKET_EVENTS.SERVER_KICKED, { code: upperCode, reason } satisfies KickedDto);
+      this.server.in(sid).socketsLeave(upperCode);
+      this.socketMeta.set(sid, {});
+    }
+    this.playerSockets.delete(playerId);
   }
 
   broadcastPresence(code: string) {

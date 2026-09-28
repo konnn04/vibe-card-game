@@ -23,9 +23,11 @@ import {
 } from '@u-no/game-engine';
 import {
   fillFreeSeats,
+  isAfkSeat,
   shrinkSeats,
   pickRotation,
   type CreateRoomDto,
+  type KickReason,
   type NetRoom,
   type NetSeat,
   type Presence,
@@ -77,6 +79,8 @@ export class RoomsService {
   public onBroadcastRoom?: (code: string, events?: GameEvent[]) => void;
   public onBroadcastPresence?: (code: string) => void;
   public onBroadcastAvatars?: (code: string) => void;
+  /** Báo riêng cho người vừa bị mời khỏi phòng (gateway gửi SERVER_KICKED + rút socket khỏi room). */
+  public onKicked?: (code: string, playerId: string, reason: KickReason) => void;
 
   constructor(private readonly avatarsService: AvatarsService) {
     // Start periodic sweep
@@ -207,6 +211,10 @@ export class RoomsService {
       const alreadySeatIndex = room.seats.findIndex((s) => s?.id === player.id);
       if (alreadySeatIndex >= 0) {
         room.seats[alreadySeatIndex] = player;
+        // Bị kick giữa ván rồi vào lại bằng link: ghế vẫn đang do máy giữ hộ ->
+        // trả lại cho chủ cũ (kick không phải chặn).
+        this.reclaimSeat(room, player.id, player);
+        if (room.afkStrikes) delete room.afkStrikes[player.id];
       } else {
         const freeSeat = room.seats.findIndex((s, i) => !s && i < room.rules.maxPlayers);
         if (freeSeat >= 0 && room.status === 'lobby') {
@@ -351,8 +359,8 @@ export class RoomsService {
       }
       case 'kick': {
         if (!isHost) throw new Error('not-allowed');
-        if (dto.targetId) {
-          this.removePlayer(room, dto.targetId);
+        if (dto.targetId && dto.targetId !== playerId) {
+          this.kickPlayer(room, dto.targetId);
         }
         break;
       }
@@ -401,7 +409,19 @@ export class RoomsService {
     if (!this.verifyToken(room, playerId, token)) throw new Error('unauthorized');
     if (room.hostId !== playerId) throw new Error('not-allowed');
 
-    // Thiếu người so với mức tối thiểu của mode (Party: 4, còn lại: 2) -> thêm bot cho đủ.
+    this.fillBotsToMin(room);
+
+    if (isValidTheme(bgTheme)) {
+      room.bgTheme = bgTheme!;
+    }
+
+    const events = this.beginMatch(room);
+    this.onBroadcastRoom?.(room.code, events);
+    this.checkAndScheduleRoom(room);
+  }
+
+  /** Thiếu người so với mức tối thiểu của mode (Party: 4, còn lại: 2) -> thêm bot cho đủ. */
+  private fillBotsToMin(room: RoomRecord): void {
     const need = minPlayersFor(room.deckType) - room.seats.filter((s) => !!s).length;
     for (let k = 0; k < need; k++) {
       const freeIndex = room.seats.findIndex((s, i) => !s && i < room.rules.maxPlayers);
@@ -413,14 +433,6 @@ export class RoomsService {
         avatarPreset: Math.floor(Math.random() * 6),
       };
     }
-
-    if (isValidTheme(bgTheme)) {
-      room.bgTheme = bgTheme!;
-    }
-
-    const events = this.beginMatch(room);
-    this.onBroadcastRoom?.(room.code, events);
-    this.checkAndScheduleRoom(room);
   }
 
   beginMatch(room: RoomRecord): GameEvent[] {
@@ -486,6 +498,21 @@ export class RoomsService {
       // xếp vào ghế, đẩy một người thật ra ngoài rồi bị bot ngồi thay luôn.
       this.purgeOfflineSpectators(room, 0);
 
+      // Người thật đang bị máy giữ ghế (rớt mạng / bỏ đi / để hết giờ nhiều
+      // lượt / bị kick giữa ván) -> mời khỏi phòng luôn, không xếp vào hàng chờ.
+      // Bot do chủ phòng thêm thì ở lại (isAfkSeat bỏ qua id 'bot-').
+      const afk = room.seats.filter((s): s is NetSeat => isAfkSeat(s));
+      for (const s of afk) this.evictPlayer(room, s.id, 'afk');
+      if (afk.length) {
+        this.onBroadcastPresence?.(room.code);
+        this.onBroadcastAvatars?.(room.code);
+        if (![...room.seats, ...room.queue].some((p) => p && !p.isBot)) {
+          this.clearRoomTimer(room.code);
+          this.onBroadcastRoom?.(room.code);
+          return { ok: true };
+        }
+      }
+
       // Bàn còn ghế trống (ván trước bắt đầu khi chưa đủ người) -> người trong
       // hàng chờ vào thẳng ghế trống, KHÔNG ai phải nhường chỗ. Bàn tăng dần lên
       // tới maxPlayers thay vì kẹt mãi ở số người lúc bắt đầu.
@@ -494,6 +521,7 @@ export class RoomsService {
         for (const f of fills) room.seats[f.seat] = room.queue[f.queueIndex];
         const moved = new Set(fills.map((f) => f.queueIndex));
         room.queue = room.queue.filter((_, k) => !moved.has(k));
+        this.fillBotsToMin(room);
         const events = this.beginMatch(room);
         this.onBroadcastRoom?.(room.code, events);
         this.checkAndScheduleRoom(room);
@@ -525,6 +553,20 @@ export class RoomsService {
         this.checkAndScheduleRoom(room);
         return { ok: true, events };
       }
+
+      // Có người AFK bị dọn mà không ai vào thay -> vẫn phải chia lại bàn từ
+      // danh sách ghế mới (NEXT_ROUND của engine giữ nguyên người chơi cũ).
+      if (afk.length) {
+        this.fillBotsToMin(room);
+        const events = this.beginMatch(room);
+        this.onBroadcastRoom?.(room.code, events);
+        this.checkAndScheduleRoom(room);
+        return { ok: true, events };
+      }
+    } else {
+      // Người chơi tự thao tác = đang ở đây: xoá đếm AFK, và nếu máy đang giữ
+      // ghế hộ (vd bị đánh dấu AFK vì để hết giờ) thì trả ghế lại ngay.
+      this.markActive(room, playerId);
     }
 
     const { state, events } = reduce(room.game, action, Date.now());
@@ -593,6 +635,59 @@ export class RoomsService {
     const humanCount = [...room.seats, ...room.queue].filter((p) => p && !p.isBot).length;
     if (humanCount === 0) {
       this.clearRoomTimer(room.code);
+    }
+  }
+
+  /**
+   * Chủ phòng KICK một người. Kick không phải chặn: người đó vào lại bằng link
+   * như khách mới được.
+   *  - Đang có ván và người đó đang cầm bài: không rút được khỏi ván giữa
+   *    chừng -> máy đánh thay tới hết ván, ghế thành AFK và bị dọn ở NEXT_ROUND.
+   *  - Còn lại (phòng chờ, hàng chờ): mời ra ngay.
+   */
+  private kickPlayer(room: RoomRecord, targetId: string): void {
+    const gp = room.status === 'playing' ? room.game?.players.find((p) => p.id === targetId) : undefined;
+    if (gp) {
+      this.removePlayer(room, targetId);
+      room.queue = room.queue.filter((q) => q.id !== targetId);
+      delete room.tokens[targetId];
+      if (room.afkStrikes) delete room.afkStrikes[targetId];
+      this.presence.get(room.code)?.delete(targetId);
+      this.onKicked?.(room.code, targetId, 'host');
+      this.checkAndScheduleRoom(room);
+    } else {
+      this.evictPlayer(room, targetId, 'host');
+    }
+    this.onBroadcastPresence?.(room.code);
+    this.onBroadcastAvatars?.(room.code);
+  }
+
+  /** Mời hẳn một người khỏi phòng (ghế, hàng chờ, vé, avatar, presence). */
+  private evictPlayer(room: RoomRecord, playerId: string, reason: KickReason): void {
+    const hadToken = !!room.tokens[playerId];
+    room.seats = room.seats.map((s) => (s?.id === playerId ? null : s));
+    room.queue = room.queue.filter((q) => q.id !== playerId);
+    delete room.tokens[playerId];
+    if (room.afkStrikes) delete room.afkStrikes[playerId];
+    this.avatarsService.removePlayer(room.code, playerId);
+    this.presence.get(room.code)?.delete(playerId);
+    if (room.hostId === playerId) {
+      const next = [...room.seats, ...room.queue].find((p) => p && !p.isBot);
+      room.hostId = next ? next.id : '';
+    }
+    // Bị kick giữa ván thì đã được báo lúc đó (vé đã xoá) — khỏi báo lần hai.
+    if (hadToken) this.onKicked?.(room.code, playerId, reason);
+  }
+
+  /** Người thật vừa tự thao tác: xoá đếm AFK, lấy lại ghế nếu máy đang giữ hộ. */
+  private markActive(room: RoomRecord, playerId: string): void {
+    if (room.afkStrikes) delete room.afkStrikes[playerId];
+    const gp = room.game?.players.find((p) => p.id === playerId);
+    if (gp && gp.isBot && !isRealBot(playerId)) {
+      gp.isBot = false;
+      gp.connected = true;
+      const seat = room.seats.find((s) => s?.id === playerId);
+      if (seat) seat.isBot = false;
     }
   }
 
@@ -789,8 +884,16 @@ export class RoomsService {
       if (actor && !actor.isBot) {
         const pMap = this.presence.get(room.code);
         const pres = pMap?.get(actor.id);
-        if (pres && !pres.online) {
-          // Player is offline -> Bot takes over seat
+        // Online mà để hết giờ liên tiếp nhiều lượt cũng là AFK (bỏ đi, treo
+        // tab). Vòng bầu Chỉ tay không tính: cả bàn cùng bầu, không phải lượt ai.
+        let afk = !!pres && !pres.online;
+        if (!afk && g.phase !== 'awaitVote') {
+          room.afkStrikes ??= {};
+          room.afkStrikes[actor.id] = (room.afkStrikes[actor.id] ?? 0) + 1;
+          afk = room.afkStrikes[actor.id] >= NET.afkTimeoutStrikes;
+        }
+        if (afk) {
+          // Bot takes over seat — ghế thành AFK, bị dọn khỏi phòng ở ván sau
           actor.isBot = true;
           actor.connected = false;
           const seat = room.seats.find((s) => s?.id === actor.id);

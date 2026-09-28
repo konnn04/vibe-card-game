@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { mulberry32 } from '@u-no/game-engine';
 import { useMatch } from '@/src/state/match';
 import { useAvatarLookup, useRoom } from '@/src/state/room';
-import { seatsAfterRotation } from '@/src/lib/rotation';
+import { seatsAfterRotation, withoutAfkSeats } from '@/src/lib/rotation';
 import { musicFlourish } from '@/src/lib/audio';
 import { Avatar } from './Avatar';
 import { UI } from '@/src/config';
@@ -201,8 +201,12 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
       (b.id === state.winnerId ? 1 : 0) - (a.id === state.winnerId ? 1 : 0) || b.score - a.score,
   );
 
+  // Ghế AFK (người thật đang bị máy giữ hộ) bị server mời khỏi phòng lúc qua
+  // ván — đội hình ván sau phải bỏ họ ra y như server sẽ làm.
+  const liveSeats = online ? withoutAfkSeats(seats) : seats;
+  const hasAfk = liveSeats.some((s, i) => s !== seats[i]);
   const nextSeats = seatsAfterRotation({
-    seats,
+    seats: liveSeats,
     queue,
     hostId,
     consecutive: Object.fromEntries(state.players.map((p) => [p.id, p.consecutiveRounds])),
@@ -301,7 +305,7 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
         })}
       </div>
 
-      {hasBench && !matchOver && (
+      {(hasBench || hasAfk) && !matchOver && (
         <div className={`relative flex max-w-[94vw] items-center gap-3 ${c ? 'mt-1.5' : 'mt-3'}`}>
           <span className="label shrink-0 text-[10px] tracking-[.2em] text-[#C6A6F0]">{t('nextLineup')}</span>
           <div className="flex gap-1.5 overflow-x-auto">

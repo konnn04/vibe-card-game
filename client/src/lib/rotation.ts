@@ -8,5 +8,5 @@
  * Chép luật này ra hai chỗ thì sớm muộn màn hình hứa một đằng, server làm một
  * nẻo — nên ở đây chỉ re-export.
  */
-export { fillFreeSeats, pickRotation, seatsAfterRotation, shrinkSeats } from '@u-no/shared';
+export { fillFreeSeats, isAfkSeat, pickRotation, seatsAfterRotation, shrinkSeats, withoutAfkSeats } from '@u-no/shared';
 export type { Rotation, RotationInput } from '@u-no/shared';

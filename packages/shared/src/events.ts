@@ -23,6 +23,8 @@ export const SOCKET_EVENTS = {
   SERVER_PONG: 'room:pong',
   SERVER_CHAT: 'room:chat',
   SERVER_ERROR: 'room:error',
+  /** Gửi riêng cho người vừa bị mời khỏi phòng (chủ phòng kick, hoặc AFK qua ván). */
+  SERVER_KICKED: 'room:kicked',
 } as const;
 
 export type SocketEventName = typeof SOCKET_EVENTS[keyof typeof SOCKET_EVENTS];

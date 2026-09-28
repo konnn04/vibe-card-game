@@ -10,12 +10,13 @@ import {
   type Presence,
   type PresenceMap,
   type RoomUpdate,
+  type KickedDto,
   type ServerChatDto,
   type Snapshot,
 } from '@u-no/shared';
 import { setServerClockOffset } from './clock';
 
-export type { NetRoom, NetSeat, Presence, PresenceMap, RoomUpdate, ServerChatDto, Snapshot };
+export type { KickedDto, NetRoom, NetSeat, Presence, PresenceMap, RoomUpdate, ServerChatDto, Snapshot };
 
 export const realtimeEnabled = true;
 
@@ -35,6 +36,8 @@ export function playerId(): string {
 const tokenKey = (code: string) => `rush.token.${code}`;
 export const saveToken = (code: string, token: string) => localStorage.setItem(tokenKey(code), token);
 export const loadToken = (code: string) => (typeof window === 'undefined' ? '' : localStorage.getItem(tokenKey(code)) ?? '');
+/** Vé phòng hết hiệu lực (bị kick) — bỏ đi để lần mở link sau vào như khách mới. */
+export const clearToken = (code: string) => { try { localStorage.removeItem(tokenKey(code)); } catch { } };
 
 export interface NetworkState {
   connected: boolean;
@@ -238,6 +241,8 @@ export interface Handlers {
   onPresence(map: PresenceMap): void;
   onAvatars(map: Record<string, string>): void;
   onChat?(chat: ServerChatDto): void;
+  /** Bị mời khỏi phòng (chủ phòng kick, hoặc AFK bị dọn lúc qua ván). */
+  onKicked?(info: KickedDto): void;
   onResync(): void;
 }
 
@@ -258,6 +263,7 @@ export function connect(code: string, handlers: Handlers): boolean {
   s.off(SOCKET_EVENTS.SERVER_PRESENCE_UPDATE);
   s.off(SOCKET_EVENTS.SERVER_AVATARS_UPDATE);
   s.off(SOCKET_EVENTS.SERVER_CHAT);
+  s.off(SOCKET_EVENTS.SERVER_KICKED);
   s.off(SOCKET_EVENTS.SERVER_PONG);
   s.off('connect');
 
@@ -279,6 +285,10 @@ export function connect(code: string, handlers: Handlers): boolean {
 
   s.on(SOCKET_EVENTS.SERVER_CHAT, (chat: ServerChatDto) => {
     handlers.onChat?.(chat);
+  });
+
+  s.on(SOCKET_EVENTS.SERVER_KICKED, (info: KickedDto) => {
+    handlers.onKicked?.(info);
   });
 
 
@@ -352,6 +362,7 @@ export function disconnect(): void {
     socket.off(SOCKET_EVENTS.SERVER_HAND_UPDATE);
     socket.off(SOCKET_EVENTS.SERVER_PRESENCE_UPDATE);
     socket.off(SOCKET_EVENTS.SERVER_AVATARS_UPDATE);
+    socket.off(SOCKET_EVENTS.SERVER_KICKED);
     socket.off(SOCKET_EVENTS.SERVER_PONG);
     socket.disconnect();
     socket = null;

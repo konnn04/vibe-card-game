@@ -2,8 +2,8 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Ban } from 'lucide-react';
-import { canPlay, colorsFor, hotkeyCard, RUSH_GRACE_MS } from '@u-no/game-engine';
+import { Ban, Users } from 'lucide-react';
+import { canPlay, colorsFor, hotkeyCard, RUSH_GRACE_MS, type GameState } from '@u-no/game-engine';
 import { useMatch } from '@/src/state/match';
 import { useRoom } from '@/src/state/room';
 import { useTurnHold, useTurnStage } from '@/src/state/useTurnHold';
@@ -20,6 +20,71 @@ import { useChat } from '@/src/state/chat';
 import { ChatBubble, ChatTriggerButton } from './InGameChat';
 import { FullscreenToggle } from './MobileGuard';
 import { GameInfo } from './GameInfo';
+import { PlayersModal } from './PlayersModal';
+
+/** Thông báo sắp nổ tồn tại bao lâu trên màn. */
+const BLOWUP_ALERT_MS = 3000;
+/** Còn cách giới hạn nổ từ chừng này lá trở xuống thì báo. */
+const BLOWUP_NEAR = 3;
+
+interface BlowUpAlert { key: string; text: string; badge?: string; critical: boolean }
+
+/**
+ * THÔNG BÁO SẮP NỔ (Mercy / Vỡ trận) — mỗi người chỉ được báo MỘT LẦN mỗi ván,
+ * đúng lúc họ vừa chạm ngưỡng, và tự tắt sau BLOWUP_ALERT_MS. Riêng mình còn
+ * được báo thêm mỗi lượt bị chồng phạt mà rút là nổ (thông tin quyết định
+ * nước đi, không phải nhắc lại cho vui).
+ */
+function useBlowUpAlerts(state: GameState | null, myId: string, pendingBoom: number): BlowUpAlert[] {
+  const t = useTranslations('game');
+  const [alerts, setAlerts] = useState<BlowUpAlert[]>([]);
+  const seen = useRef(new Set<string>());
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => () => { timers.current.forEach(clearTimeout); }, []);
+
+  useEffect(() => {
+    if (!state || !state.rules.blowUp || state.phase === 'roundEnd' || state.phase === 'matchEnd') return;
+    const limit = state.rules.blowUpAt;
+    const fresh: BlowUpAlert[] = [];
+    for (const p of state.players) {
+      if (p.eliminated) continue;
+      const remaining = limit - p.hand.length;
+      if (remaining > BLOWUP_NEAR) continue;
+      const key = `${state.roundNo}:${p.id}`;
+      if (seen.current.has(key)) continue;
+      seen.current.add(key);
+      const me = p.id === myId;
+      fresh.push({
+        key,
+        critical: remaining <= 1,
+        text: !me
+          ? t('nearBlowUpOther', { name: p.name, count: p.hand.length, limit })
+          : remaining <= 0
+            ? t('atBlowUpLimit', { limit })
+            : t('nearBlowUpTip', { count: p.hand.length, limit, remaining }),
+        badge: !me ? undefined : remaining <= 0 ? t('nextCardExplodes') : t('cardsLeftToLimit', { n: remaining }),
+      });
+    }
+    if (pendingBoom > 0) {
+      const key = `${state.roundNo}:pending:${state.turnDeadline}`;
+      if (!seen.current.has(key)) {
+        seen.current.add(key);
+        fresh.push({ key, critical: true, text: t('nearBlowUpPending', { n: pendingBoom }), badge: `+${pendingBoom} 💥` });
+      }
+    }
+    if (!fresh.length) return;
+    // Hiện + hẹn tắt đều qua hẹn giờ (không setState đồng bộ trong thân effect).
+    // Không huỷ ở cleanup: state đổi liên tục, huỷ thì thông báo mất trước 3s.
+    const keys = new Set(fresh.map((f) => f.key));
+    timers.current.push(
+      setTimeout(() => setAlerts((list) => [...list, ...fresh]), 0),
+      setTimeout(() => setAlerts((list) => list.filter((a) => !keys.has(a.key))), BLOWUP_ALERT_MS),
+    );
+  }, [state, myId, pendingBoom, t]);
+
+  return alerts;
+}
 
 function useIsMobileLandscape(): boolean {
   const [isMob, setIsMob] = useState(false);
@@ -134,6 +199,8 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
   const myChat = useChat((s) => s.messages[myId]);
   const tInfo = useTranslations('info');
   const [showInfo, setShowInfo] = useState(false);
+  const [showPlayers, setShowPlayers] = useState(false);
+  const tRoom = useTranslations('room');
   /**
    * Party — phiếu Chỉ tay CỦA MÌNH. State công khai che mọi phiếu (kể cả của
    * mình) thành '', nên nhớ ở đây để tô nút đã chọn. Gắn theo hạn bầu: sang
@@ -223,6 +290,7 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
   const willExplodeIfDraw = pendingAmount > 0 && (handCount + pendingAmount > blowUpAt);
   const isNearBlowUp = seated && !me?.eliminated && blowUp && (remainingToLimit <= 3 || willExplodeIfDraw);
   const isCriticalBlowUp = isNearBlowUp && (remainingToLimit <= 1 || willExplodeIfDraw);
+  const blowUpAlerts = useBlowUpAlerts(state, myId, willExplodeIfDraw ? pendingAmount : 0);
 
   /**
    * Chỉ được BẮT sau khi hết ân hạn RUSH_GRACE_MS — trong khoảng đó chỉ chủ
@@ -418,32 +486,48 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
         )}
       </div>
 
-      <div className={`absolute ${isMobile ? 'right-2.5 top-2.5 gap-1' : 'right-6 top-6 gap-1.5'} flex flex-col items-end`}>
-        {state.players.map((p) => (
-          <div
-            key={p.id}
-            className={`display rounded-lg ${isMobile ? 'px-2 py-0.5 text-[12px]' : 'px-3 py-1 text-[17px]'}`}
-            style={{
-              background: p.id === myId ? 'linear-gradient(90deg,#FFB534,#FF8A2B)' : 'rgba(12,4,8,.55)',
-              color: p.id === myId ? '#2A1508' : '#FFF3DA',
-              border: '1px solid rgba(255,215,140,.3)',
-            }}
-          >
-            {isTakenOver(p) && (
-              <span
-                className="mr-1 rounded px-1 text-[9px] font-bold align-middle"
-                style={{ background: 'rgba(226,72,59,.9)', color: '#fff' }}
-                title={t('aiTookOver', { name: p.name })}
-              >
-                AI
-              </span>
-            )}
-            {p.name} · {p.score}
-          </div>
-        ))}
-      </div>
+      {/* Bảng điểm GỌN: một khối nhỏ, bấm vào mở bảng người chơi (kèm nút kick cho chủ phòng). */}
+      <button
+        type="button"
+        className={`pointer-events-auto absolute ${isMobile ? 'right-2.5 top-2 w-[118px] px-1.5 py-1' : 'right-6 top-6 w-[158px] px-2 py-1.5'} flex cursor-pointer flex-col gap-0.5 rounded-[12px] text-left transition-transform hover:scale-[1.03] active:scale-95`}
+        style={{ background: 'rgba(12,4,8,.6)', border: '1px solid rgba(255,215,140,.35)', boxShadow: '0 4px 14px rgba(0,0,0,.35)' }}
+        onClick={() => { playSfx('click'); setShowPlayers(true); }}
+        title={tRoom('tablePlayers')}
+        aria-label={tRoom('tablePlayers')}
+      >
+        <div className={`label flex items-center justify-between text-[#C6A6F0] ${isMobile ? 'text-[9px]' : 'text-[10px]'} tracking-[.14em]`}>
+          <span className="flex items-center gap-1"><Users size={isMobile ? 10 : 12} /> {t('scores')}</span>
+          <span className="opacity-70">›</span>
+        </div>
+        {state.players
+          .slice()
+          .sort((a, b) => b.score - a.score)
+          .map((p) => (
+            <div
+              key={p.id}
+              className={`display flex items-center gap-1 rounded-[6px] leading-tight ${isMobile ? 'px-1 text-[11px]' : 'px-1.5 text-[13px]'}`}
+              style={{
+                background: p.id === myId ? 'linear-gradient(90deg,#FFB534,#FF8A2B)' : 'transparent',
+                color: p.id === myId ? '#2A1508' : '#FFF3DA',
+                opacity: p.eliminated ? 0.5 : 1,
+              }}
+            >
+              {isTakenOver(p) && (
+                <span
+                  className="shrink-0 rounded px-0.5 text-[8px] font-bold"
+                  style={{ background: 'rgba(226,72,59,.9)', color: '#fff' }}
+                  title={t('aiTookOver', { name: p.name })}
+                >
+                  AI
+                </span>
+              )}
+              <span className="min-w-0 flex-1 truncate">{p.name}</span>
+              <span className="shrink-0 tabular-nums">{p.score}</span>
+            </div>
+          ))}
+      </button>
 
-      <div className={`absolute left-1/2 ${isMobile ? 'top-3 scale-90' : 'top-[84px]'} flex -translate-x-1/2 items-center gap-2`}>
+      <div className={`absolute left-1/2 ${isMobile ? 'top-1.5 scale-90' : 'top-4'} flex -translate-x-1/2 items-center gap-2`}>
         <DirectionBadge direction={state.direction} />
         <motion.div
           key={`${current?.id}-${state.turn}`}
@@ -470,45 +554,43 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
         </motion.div>
       </div>
 
-      {/* Tip cảnh báo sắp nổ (Mercy / Vỡ trận) */}
-      <AnimatePresence>
-        {isNearBlowUp && (
-          <motion.div
-            key="danger-tip"
-            initial={{ opacity: 0, y: -8, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.95 }}
-            transition={{ duration: 0.25 }}
-            className={`pointer-events-none absolute left-1/2 -translate-x-1/2 ${isMobile ? 'top-[44px]' : 'top-[132px]'} z-20 flex items-center gap-2 rounded-full border px-3.5 py-1 backdrop-blur-md shadow-xl`}
-            style={{
-              background: 'linear-gradient(135deg, rgba(65, 10, 14, 0.92), rgba(28, 4, 8, 0.95))',
-              borderColor: isCriticalBlowUp ? 'rgba(239, 68, 68, 0.85)' : 'rgba(239, 68, 68, 0.55)',
-              boxShadow: isCriticalBlowUp
-                ? '0 6px 20px rgba(0,0,0,0.6), 0 0 20px rgba(239,68,68,0.45)'
-                : '0 6px 18px rgba(0,0,0,0.5), 0 0 12px rgba(239,68,68,0.25)',
-            }}
-          >
-            <span className="text-[13px] md:text-[15px] animate-pulse">⚠️</span>
-            <span className={`display font-semibold tracking-wide ${isMobile ? 'text-[12px]' : 'text-[14px]'} text-[#FEE2E2]`}>
-              {willExplodeIfDraw
-                ? t('nearBlowUpPending', { n: pendingAmount })
-                : remainingToLimit <= 0
-                  ? t('atBlowUpLimit', { limit: blowUpAt })
-                  : t('nearBlowUpTip', { count: handCount, limit: blowUpAt, remaining: remainingToLimit })}
-            </span>
-            <span
-              className={`label rounded-full px-2 py-0.5 ${isMobile ? 'text-[10px]' : 'text-[11px]'} font-bold text-white shadow`}
-              style={{ background: 'linear-gradient(90deg, #DC2626, #991B1B)' }}
+      {/* Thông báo sắp nổ (Mercy / Vỡ trận): hiện MỘT LẦN cho mỗi người khi họ
+          chạm ngưỡng, tự tắt sau 3s — thay cho dải cảnh báo đứng im giữa màn. */}
+      <div className={`pointer-events-none absolute left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5 ${isMobile ? 'top-[40px]' : 'top-[64px]'}`}>
+        <AnimatePresence>
+          {blowUpAlerts.map((a) => (
+            <motion.div
+              key={a.key}
+              layout
+              initial={{ opacity: 0, y: -8, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.95 }}
+              transition={{ duration: 0.25 }}
+              className="flex items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-1 shadow-xl backdrop-blur-md"
+              style={{
+                background: 'linear-gradient(135deg, rgba(65, 10, 14, 0.92), rgba(28, 4, 8, 0.95))',
+                borderColor: a.critical ? 'rgba(239, 68, 68, 0.85)' : 'rgba(239, 68, 68, 0.55)',
+                boxShadow: a.critical
+                  ? '0 6px 20px rgba(0,0,0,0.6), 0 0 20px rgba(239,68,68,0.45)'
+                  : '0 6px 18px rgba(0,0,0,0.5), 0 0 12px rgba(239,68,68,0.25)',
+              }}
             >
-              {willExplodeIfDraw
-                ? `+${pendingAmount} 💥`
-                : remainingToLimit <= 0
-                  ? t('nextCardExplodes')
-                  : t('cardsLeftToLimit', { n: remainingToLimit })}
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <span className="animate-pulse text-[13px] md:text-[15px]">⚠️</span>
+              <span className={`display font-semibold tracking-wide ${isMobile ? 'text-[12px]' : 'text-[14px]'} text-[#FEE2E2]`}>
+                {a.text}
+              </span>
+              {a.badge && (
+                <span
+                  className={`label rounded-full px-2 py-0.5 ${isMobile ? 'text-[10px]' : 'text-[11px]'} font-bold text-white shadow`}
+                  style={{ background: 'linear-gradient(90deg, #DC2626, #991B1B)' }}
+                >
+                  {a.badge}
+                </span>
+              )}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
       {/* HUD của mình: vòng đếm ngược quanh avatar — gọn để không lấn quạt bài */}
       {seated && (
@@ -748,6 +830,9 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
       />
       {showInfo && (
         <GameInfo rules={state.rules} deckType={state.deckType} onClose={() => setShowInfo(false)} />
+      )}
+      {showPlayers && (
+        <PlayersModal state={state} myId={myId} onClose={() => setShowPlayers(false)} />
       )}
     </div>
   );

@@ -14,6 +14,7 @@ import { seatIndex, seatPos } from './layout';
 import { gfxOf, useSettings } from '@/src/lib/settings';
 import { useMatch } from '@/src/state/match';
 import { useActiveTheme, useAvatarLookup, useRoom } from '@/src/state/room';
+import type { Presence } from '@/src/state/net';
 import { serverNow } from '@/src/state/clock';
 import { isTakenOver } from '@/src/lib/takeover';
 import { themeMeta } from '@/src/lib/themes';
@@ -144,6 +145,41 @@ function FpsGovernor({ hasBloom }: { hasBloom: boolean }) {
   return null;
 }
 
+/**
+ * Huy hiệu mạng ở góc dưới-phải avatar: ping (xanh/vàng/đỏ), OFF khi rớt,
+ * hoặc AI khi máy đang đánh thay. Bot thật không có huy hiệu.
+ */
+function SeatNetBadge({ player, presence, aiTitle }: {
+  player: { isBot: boolean; connected?: boolean };
+  presence: Presence | undefined;
+  aiTitle: string;
+}) {
+  const corner = 'pointer-events-auto absolute -bottom-1.5 -right-2 z-20 inline-flex items-center gap-0.5 rounded-[5px] font-mono text-[10px] font-bold leading-none text-white shadow-[0_2px_6px_rgba(0,0,0,.55)]';
+  if (isTakenOver(player)) {
+    return (
+      <span className={corner} style={{ padding: '2px 4px', background: 'rgba(226,72,59,.95)', border: '1px solid #fff' }} title={aiTitle}>
+        AI
+      </span>
+    );
+  }
+  if (player.isBot) return null;
+  const stale = !!presence && presence.ts > 0 && serverNow() - presence.ts > 15000;
+  const bad = !presence?.online || stale;
+  const pingMs = bad ? null : (presence?.ping ?? null);
+  const color = bad ? '#E2483B' : pingMs == null ? '#8A8A8A' : pingMs < 150 ? '#2FAE4E' : pingMs < 400 ? '#D99A16' : '#E2483B';
+  const label = bad ? 'OFF' : pingMs != null ? `${pingMs}` : '---';
+  return (
+    <span
+      className={corner}
+      style={{ padding: '2px 3px', background: color, border: '1px solid rgba(255,255,255,.85)' }}
+      title={bad ? 'offline' : pingMs != null ? `${pingMs}ms` : ''}
+    >
+      {bad ? <WifiOff size={9} color="#fff" /> : <Wifi size={9} color="#fff" />}
+      {label}
+    </span>
+  );
+}
+
 /** HUD người chơi: DOM 2D neo theo toạ độ 3D của ghế (drei Html), không tự tính 3D. */
 function SeatHuds() {
   const t = useTranslations('game');
@@ -229,60 +265,22 @@ function SeatHuds() {
                   <Ban size={40} strokeWidth={3} color="#fff" style={{ filter: 'drop-shadow(0 0 6px rgba(226,59,46,.9)) drop-shadow(0 2px 4px rgba(0,0,0,.7))' }} />
                 </div>
               )}
-              {online && (() => {
-                const pr = presence[p.id];
-                if (isTakenOver(p)) {
-                  return (
-                    <span
-                      className="mr-1 rounded px-1 align-middle text-[10px] font-bold"
-                      style={{ background: 'rgba(226,72,59,.9)', color: '#fff' }}
-                      title={t('aiTookOver', { name: p.name })}
-                    >
-                      AI
-                    </span>
-                  );
-                }
-                if (p.isBot) return null;
-                const stale = !!pr && pr.ts > 0 && serverNow() - pr.ts > 15000;
-                const bad = !pr?.online || stale;
-                const pingMs = bad ? null : (pr?.ping ?? null);
-                const color = bad ? '#E2483B' : pingMs == null ? '#8A8A8A' : pingMs < 150 ? '#4ED16B' : pingMs < 400 ? '#F0B62E' : '#E2483B';
-                const label = bad ? 'OFF' : pingMs != null ? `${pingMs}` : '---';
-                return (
-                  <span
-                    title={bad ? 'offline' : pingMs != null ? `${pingMs}ms` : ''}
-                    className="inline-block rounded align-middle font-mono text-[12px] font-bold leading-none"
-                    style={{
-                      padding: '1px 3px',
-                      background: `${color}`,
-                      color: "#ffffff",
-                      border: `1px solid ${color}88`,
-                      minWidth: 24,
-                      textAlign: 'center',
-                    }}
-                  >
-                    {label}
-                    {bad ? (
-                      <WifiOff size={12} color="#fff" className='ml-1 inline' />
-                    ) : (
-                      <Wifi size={12} color="#fff" className='ml-1 inline' />
-                    )}
-                  </span>
-                );
-
-              })()}
               <div className="seat__name">
                 {(state.chain?.a === p.id || state.chain?.b === p.id) && <span className="mr-0.5">🔗</span>}
                 {p.name}
                 {state.phase === 'awaitVote' && state.vote?.votes[p.id] !== undefined && <span className="ml-0.5">✔</span>}
               </div>
-              <Avatar
-                name={p.name}
-                preset={avatarOf(p.id).preset}
-                avatarUrl={avatarOf(p.id).url}
-                size={active ? 60 : 46}
-                className="seat__avatar"
-              />
+              {/* Ping neo ở GÓC DƯỚI avatar (không chen ngang hàng tên/avatar/số lá). */}
+              <div className="relative shrink-0">
+                <Avatar
+                  name={p.name}
+                  preset={avatarOf(p.id).preset}
+                  avatarUrl={avatarOf(p.id).url}
+                  size={active ? 60 : 46}
+                  className="seat__avatar"
+                />
+                {online && <SeatNetBadge player={p} presence={presence[p.id]} aiTitle={t('aiTookOver', { name: p.name })} />}
+              </div>
               <div className="seat__count">{p.eliminated ? '💥' : p.hand.length}</div>
               {p.hand.length === 1 && <div className="seat__rush">{p.calledRush ? 'RUSH!' : '?'}</div>}
             </div>

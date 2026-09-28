@@ -16,7 +16,7 @@ import { useRoom, type Seat } from '@/src/state/room';
 import { useMatch } from '@/src/state/match';
 import { useChat } from '@/src/state/chat';
 import {
-  api, connect, disconnect, loadToken, playerId, saveToken, startPolling,
+  api, clearToken, connect, disconnect, loadToken, playerId, saveToken, startPolling,
   type NetSeat, type Snapshot,
 } from '@/src/state/net';
 import { MainMenu } from '@/src/ui/MainMenu';
@@ -154,6 +154,19 @@ function Shell() {
       onPresence: (map) => useRoom.getState().applyPresence(map),
       onAvatars: (map) => useRoom.getState().applyAvatars(map),
       onChat: (chat) => useChat.getState().addMessage(chat.senderId || chat.playerId, chat.message),
+      // Bị mời khỏi phòng: về menu ngay, bỏ vé cũ (vé đã chết ở server) để mở
+      // lại link thì vào như khách mới — kick không phải chặn.
+      onKicked: (info) => {
+        clearToken(info.code);
+        disconnect();
+        stopPoll.current?.();
+        stopPoll.current = null;
+        useMatch.getState().stop();
+        useRoom.getState().reset();
+        clearRoomInUrl();
+        setScreen('menu');
+        useMatch.getState().setToast(tRoom(info.reason === 'afk' ? 'kickedAfk' : 'kickedByHost'));
+      },
       onResync: () => {
         void api.snapshot(code, playerId(), loadToken(code)).then(applySnapshot).catch(() => { });
         void sendAvatar(code, loadToken(code));
@@ -161,7 +174,7 @@ function Shell() {
     });
 
     if (!ok) stopPoll.current = startPolling(code, applySnapshot);
-  }, [applySnapshot, holdIfEnteringMatch, sendAvatar]);
+  }, [applySnapshot, holdIfEnteringMatch, sendAvatar, tRoom]);
 
   const enterOnline = useCallback(async (fn: () => Promise<{ code: string; token: string }>) => {
     setBusy(true);

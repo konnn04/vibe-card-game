@@ -70,6 +70,19 @@ export function fillFreeSeats<T extends { id: string; watchOnly?: boolean }>(
   return out;
 }
 
+/**
+ * GHẾ AFK: người THẬT đang bị máy ngồi giữ hộ (rớt mạng, bỏ đi, để hết giờ
+ * nhiều lượt liền, hoặc bị chủ phòng kick giữa ván). Sang ván sau những ghế này
+ * bị dọn khỏi phòng. Bot do chủ phòng thêm (id 'bot-...') KHÔNG tính — chúng ở lại.
+ */
+export const isAfkSeat = (s: { id: string; isBot?: boolean } | null | undefined): boolean =>
+  !!s && !!s.isBot && !s.id.startsWith('bot-');
+
+/** Bỏ các ghế AFK ra khỏi danh sách (để trống chỗ) — xem isAfkSeat. */
+export function withoutAfkSeats<T extends { id: string; isBot?: boolean }>(seats: (T | null)[]): (T | null)[] {
+  return seats.map((s) => (isAfkSeat(s) ? null : s));
+}
+
 /** Danh sách ghế SAU khi xoay vòng — dùng để hiện trước đội hình ván sau. */
 export function seatsAfterRotation<T extends { id: string; watchOnly?: boolean; isBot?: boolean }>(
   opts: RotationInput<T> & { maxSeats?: number },
