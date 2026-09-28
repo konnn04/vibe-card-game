@@ -38,6 +38,8 @@ function CameraRig() {
     if (!last) return;
     if (last.kind === 'rush' || last.kind === 'caught' || last.kind === 'flip') {
       shake.current = 0.16;
+    } else if (last.kind === 'eliminated') {
+      shake.current = 0.32;
     } else if (last.kind === 'draw' && last.payload.t === 'draw' && last.payload.penalty) {
       // Rung càng mạnh khi chồng bài rút càng cao (tối đa ở ~8 lá trở lên)
       const n = last.payload.cardIds.length;
@@ -202,7 +204,6 @@ function SeatHuds() {
           <Html key={p.id} position={[pos.x, 0.55, pos.z]} center zIndexRange={[10, 0]}>
             <div
               className={`seat ${active ? 'seat--turn' : ''}`}
-              // Vỡ trận: mờ + xám, vẫn ở chỗ cũ để cả bàn nhớ ai đã nổ.
               style={{ position: 'relative', ...(p.eliminated ? { opacity: 0.45, filter: 'grayscale(1)' } : null) }}
             >
               {chat && (
@@ -271,7 +272,6 @@ function SeatHuds() {
 
               })()}
               <div className="seat__name">
-                {/* Party: 🔗 đang bị Cọng xích · ✔ đã bầu Chỉ tay (không lộ bầu ai). */}
                 {(state.chain?.a === p.id || state.chain?.b === p.id) && <span className="mr-0.5">🔗</span>}
                 {p.name}
                 {state.phase === 'awaitVote' && state.vote?.votes[p.id] !== undefined && <span className="ml-0.5">✔</span>}

@@ -140,7 +140,6 @@ export function SeatPointer({
           onPointerDown={(e) => {
             const p = localPoint(e);
             setMouse(p);
-            // Tính lại ghế đang chỉ theo ĐÚNG điểm vừa bấm (cảm ứng không có hover).
             const a = angleTo(p);
             let best = Infinity;
             let hit: string | null = null;
@@ -149,7 +148,7 @@ export function SeatPointer({
               if (d > Math.PI) d = Math.PI * 2 - d;
               if (d < best) { best = d; hit = t.id; }
             }
-            if (hit && best <= (SNAP_DEG * Math.PI) / 180) choose(hit);
+            if (hit) choose(hit);
           }}
         >
           {/* Tiêu đề + đồng hồ + số phiếu: GIỮA BÀN, ngay dưới bàn tay — đặt trên

@@ -47,10 +47,10 @@ lỗi thì **riêng âm đó** rơi về bản tổng hợp, không làm hỏng 
 | `jumpIn` | đánh chen cướp lượt | `jumpIn.mp3` |
 | `flip` | lật bàn (Ú Nồ Flip) | `flip.mp3` |
 | `swap` | đổi tay bài (luật 0/7) | `swap.mp3` |
-| `explode` | vỡ trận: tay bài quá 36 lá, nổ tung bị loại (Hỗn loạn) | _(đang dùng bản tổng hợp)_ |
+| `explode` | vỡ trận: tay bài quá 36 lá, nổ tung bị loại (Hỗn loạn) | `explode.mp3` |
 | `win` | thắng ván | `win.mp3` |
 | `click` | bấm nút / thao tác không hợp lệ | `click.mp3` |
-| `countdown` | mỗi nhịp đếm ngược 5-4-3-2-1 trước khi chia bài | _(đang dùng bản tổng hợp)_ |
+| `countdown` | mỗi nhịp đếm ngược 5-4-3-2-1 trước khi chia bài | `countdown.mp3` |
 | `gameStart` | hô "bắt đầu!" ngay khi đếm ngược kết thúc | `gameStart.mp3` |
 
 > Bảng sinh tự động từ `src/lib/sfxNames.ts`. Thêm âm mới thì thêm một dòng ở

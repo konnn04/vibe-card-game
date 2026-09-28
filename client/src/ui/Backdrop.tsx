@@ -31,6 +31,40 @@ const LEAVES = [0, 1, 2, 3, 4, 5].map((i) => ({
   delay: `${(i * 1.6).toFixed(1)}s`,
 }));
 
+const SPACE_STARS = Array.from({ length: 32 }, (_, i) => ({
+  left: `${rnd(i * 3 + 1, 2, 98).toFixed(1)}%`,
+  top: `${rnd(i * 7 + 2, 2, 95).toFixed(1)}%`,
+  size: Number((1.2 + ((i * 11) % 5) * 0.4).toFixed(1)),
+  color: ['#FFFFFF', '#BAE6FD', '#E9D5FF', '#FEF08A'][i % 4],
+  dur: `${(3 + ((i * 13) % 7) * 0.8).toFixed(1)}s`,
+  delay: `${(((i * 17) % 11) * 0.5).toFixed(1)}s`,
+  glow: i % 3 === 0,
+}));
+
+const PADDY_POLLEN = Array.from({ length: 14 }, (_, i) => ({
+  left: `${rnd(i * 5 + 3, 4, 96).toFixed(1)}%`,
+  top: `${rnd(i * 9 + 4, 38, 88).toFixed(1)}%`,
+  size: Number((2.5 + ((i * 7) % 4) * 0.8).toFixed(1)),
+  dur: `${(4.5 + ((i * 11) % 6) * 0.7).toFixed(1)}s`,
+  delay: `${(((i * 13) % 9) * 0.6).toFixed(1)}s`,
+}));
+
+const CITY_BEACONS = [
+  { left: '16%', bottom: '58%', color: '#EF4444', dur: '1.6s', delay: '0s' },
+  { left: '48%', bottom: '74%', color: '#F59E0B', dur: '2.0s', delay: '0.4s' },
+  { left: '53%', bottom: '71%', color: '#EF4444', dur: '1.8s', delay: '0.8s' },
+  { left: '71%', bottom: '56%', color: '#EF4444', dur: '2.2s', delay: '0.2s' },
+  { left: '89%', bottom: '63%', color: '#F59E0B', dur: '1.9s', delay: '0.6s' },
+];
+
+const CITY_DROPS = Array.from({ length: 14 }, (_, i) => ({
+  left: `${rnd(i * 7 + 1, 4, 96).toFixed(1)}%`,
+  top: `${rnd(i * 11 + 3, 10, 85).toFixed(1)}%`,
+  height: 12 + (i % 4) * 6,
+  dur: `${(5 + ((i * 13) % 5) * 0.8).toFixed(1)}s`,
+  delay: `${(((i * 17) % 7) * 0.9).toFixed(1)}s`,
+}));
+
 function CafeScene() {
   return (
     <div style={{ ...fill, background: 'linear-gradient(#140E14 0%,#1B1218 42%,#241519 70%,#160F12 100%)' }}>
@@ -143,8 +177,389 @@ function ParkScene() {
   );
 }
 
+function SpaceScene() {
+  return (
+    <div style={{ ...fill, background: 'linear-gradient(180deg, #050510 0%, #090822 35%, #140D36 68%, #060614 100%)' }}>
+      {/* Tinh vân tím góc trên trái */}
+      <div style={{ position: 'absolute', left: '-10%', top: '-8%', width: '65%', height: '65%', background: 'radial-gradient(ellipse 65% 55% at 40% 40%, rgba(139, 92, 246, 0.22), transparent 72%)', filter: 'blur(20px)' }} />
+      {/* Cụm sao / tinh vân lam góc phải */}
+      <div style={{ position: 'absolute', right: '-10%', top: '22%', width: '60%', height: '60%', background: 'radial-gradient(ellipse 60% 50% at 60% 50%, rgba(6, 182, 212, 0.18), transparent 70%)', filter: 'blur(25px)' }} />
+      {/* Bụi sao hồng ngoại góc dưới */}
+      <div style={{ position: 'absolute', left: '20%', bottom: '-15%', width: '70%', height: '55%', background: 'radial-gradient(ellipse 70% 50% at 50% 60%, rgba(217, 70, 239, 0.14), transparent 75%)', filter: 'blur(30px)' }} />
+
+      {/* Dàn sao nhấp nháy tĩnh (không giật khung hình) */}
+      {SPACE_STARS.map((s, i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            left: s.left,
+            top: s.top,
+            width: s.size,
+            height: s.size,
+            borderRadius: '50%',
+            background: s.color,
+            boxShadow: s.glow ? `0 0 8px 2px ${s.color}` : 'none',
+            animation: `bgTwinkle ${s.dur} ease-in-out ${s.delay} infinite`,
+          }}
+        />
+      ))}
+
+      {/* Sao băng vụt qua bầu trời */}
+      <div
+        style={{
+          position: 'absolute',
+          left: '16%',
+          top: '10%',
+          width: 140,
+          height: 2,
+          transformOrigin: '0 50%',
+          background: 'linear-gradient(90deg, transparent 0%, rgba(56,189,248,0.4) 40%, #FFFFFF 100%)',
+          boxShadow: '0 0 10px 2px rgba(56,189,248,0.8)',
+          animation: 'bgMeteor 9s ease-in 2.5s infinite',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: -2,
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: '#FFFFFF',
+            boxShadow: '0 0 14px 4px #38BDF8',
+          }}
+        />
+      </div>
+
+      {/* Hành tinh khí khổng lồ có vành đai lơ lửng */}
+      <div
+        style={{
+          position: 'absolute',
+          right: '12%',
+          top: '14%',
+          width: 260,
+          height: 200,
+          animation: 'bgPlanetFloat 15s ease-in-out infinite',
+        }}
+      >
+        {/* Nửa vành đai phía sau */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 62,
+            width: 260,
+            height: 76,
+            borderRadius: '50%',
+            transform: 'rotate(-24deg)',
+            background: 'radial-gradient(ellipse 50% 50% at 50% 50%, transparent 48%, rgba(192, 132, 252, 0.2) 50%, rgba(216, 180, 254, 0.75) 58%, rgba(147, 51, 234, 0.35) 66%, rgba(232, 121, 249, 0.65) 73%, transparent 78%)',
+            clipPath: 'polygon(0% 0%, 100% 0%, 100% 50%, 0% 50%)',
+          }}
+        />
+
+        {/* Quả cầu hành tinh */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 60,
+            top: 30,
+            width: 140,
+            height: 140,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle at 35% 28%, #D8B4FE 0%, #9333EA 36%, #581C87 72%, #1E0738 100%)',
+            boxShadow: '0 0 50px 12px rgba(168, 85, 247, 0.4)',
+          }}
+        />
+
+        {/* Nửa vành đai phía trước tạo chiều sâu 3D */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 62,
+            width: 260,
+            height: 76,
+            borderRadius: '50%',
+            transform: 'rotate(-24deg)',
+            background: 'radial-gradient(ellipse 50% 50% at 50% 50%, transparent 48%, rgba(192, 132, 252, 0.2) 50%, rgba(216, 180, 254, 0.75) 58%, rgba(147, 51, 234, 0.35) 66%, rgba(232, 121, 249, 0.65) 73%, transparent 78%)',
+            clipPath: 'polygon(0% 50%, 100% 50%, 100% 100%, 0% 100%)',
+          }}
+        />
+      </div>
+
+      {/* Mặt trăng băng có hố va chạm lơ lửng */}
+      <div
+        style={{
+          position: 'absolute',
+          left: '14%',
+          top: '22%',
+          width: 70,
+          height: 70,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle at 32% 28%, #E0F2FE 0%, #38BDF8 38%, #0284C7 74%, #082F49 100%)',
+          boxShadow: '0 0 35px 8px rgba(56, 189, 248, 0.35)',
+          animation: 'bgPlanetFloatAlt 18s ease-in-out 1.5s infinite',
+        }}
+      >
+        <div style={{ position: 'absolute', left: 16, top: 20, width: 14, height: 14, borderRadius: '50%', background: 'radial-gradient(circle, #0369A1, transparent 75%)', opacity: 0.75 }} />
+        <div style={{ position: 'absolute', left: 38, top: 34, width: 10, height: 10, borderRadius: '50%', background: 'radial-gradient(circle, #075985, transparent 75%)', opacity: 0.65 }} />
+        <div style={{ position: 'absolute', left: 24, top: 44, width: 8, height: 8, borderRadius: '50%', background: 'radial-gradient(circle, #0284C7, transparent 75%)', opacity: 0.55 }} />
+      </div>
+
+      {/* Tiểu hành tinh hồng ngọc lơ lửng */}
+      <div
+        style={{
+          position: 'absolute',
+          left: '28%',
+          bottom: '24%',
+          width: 34,
+          height: 34,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle at 35% 30%, #FDA4AF 0%, #E11D48 50%, #4C0519 100%)',
+          boxShadow: '0 0 22px 5px rgba(225, 29, 72, 0.45)',
+          animation: 'bgPlanetFloat 11s ease-in-out 3s infinite',
+        }}
+      />
+
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '36%', background: 'linear-gradient(rgba(5,5,16,0), rgba(4,4,14,.65))' }} />
+    </div>
+  );
+}
+
+function RiceStalks({ style = {} }: { style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 160 260" fill="none" xmlns="http://www.w3.org/2000/svg" style={style}>
+      <path d="M20 260 Q40 160 90 90 Q120 50 145 65" stroke="#CA8A04" strokeWidth="3" strokeLinecap="round" />
+      {[0, 1, 2, 3, 4, 5].map((k) => (
+        <ellipse
+          key={`g1-${k}`}
+          cx={95 + k * 9}
+          cy={85 - k * 4 + (k > 3 ? (k - 3) * 6 : 0)}
+          rx="5"
+          ry="9"
+          transform={`rotate(${30 + k * 8} ${95 + k * 9} ${85 - k * 4})`}
+          fill="#FACC15"
+          stroke="#A16207"
+          strokeWidth="1"
+        />
+      ))}
+      <path d="M10 260 Q30 180 65 120 Q95 70 120 85" stroke="#EAB308" strokeWidth="2.5" strokeLinecap="round" />
+      {[0, 1, 2, 3, 4].map((k) => (
+        <ellipse
+          key={`g2-${k}`}
+          cx={75 + k * 10}
+          cy={110 - k * 6 + (k > 2 ? (k - 2) * 6 : 0)}
+          rx="4.5"
+          ry="8"
+          transform={`rotate(${35 + k * 7} ${75 + k * 10} ${110 - k * 6})`}
+          fill="#FEF08A"
+          stroke="#CA8A04"
+          strokeWidth="1"
+        />
+      ))}
+    </svg>
+  );
+}
+
+function PaddyScene() {
+  return (
+    <div style={{ ...fill, background: 'linear-gradient(180deg, #2A1133 0%, #581C26 22%, #9A3412 44%, #C2410C 60%, #EA580C 74%, #F59E0B 88%, #FDE047 100%)' }}>
+      {/* Vầng hào quang mặt trời lặn */}
+      <div style={{ position: 'absolute', left: '60%', top: '22%', width: 520, height: 520, marginLeft: -260, marginTop: -260, borderRadius: '50%', background: 'radial-gradient(circle, rgba(254, 240, 138, 0.35) 0%, rgba(245, 158, 11, 0.2) 40%, rgba(234, 88, 12, 0.08) 65%, transparent 80%)', animation: 'bgSunPulse 9s ease-in-out infinite' }} />
+
+      {/* Quả cầu mặt trời hoàng hôn rực rỡ */}
+      <div style={{ position: 'absolute', left: '60%', top: '22%', width: 170, height: 170, marginLeft: -85, marginTop: -85, borderRadius: '50%', background: 'radial-gradient(circle at 50% 50%, #FFFBEB 0%, #FEF08A 32%, #F59E0B 68%, #EA580C 100%)', boxShadow: '0 0 60px 20px rgba(245, 158, 11, 0.7), 0 0 110px 40px rgba(234, 88, 12, 0.45)', animation: 'bgSunPulse 9s ease-in-out infinite' }} />
+
+      {/* Dải mây chiều lững lờ trôi */}
+      <div style={{ position: 'absolute', left: 0, right: 0, top: '26%', height: 120, animation: 'bgDriftSlow 45s ease-in-out infinite alternate' }}>
+        <div style={{ position: 'absolute', left: '12%', top: 20, width: 280, height: 42, borderRadius: 40, background: 'rgba(254, 215, 170, 0.35)', filter: 'blur(3px)' }} />
+        <div style={{ position: 'absolute', left: '48%', top: 0, width: 340, height: 52, borderRadius: 50, background: 'rgba(253, 186, 116, 0.4)', filter: 'blur(4px)' }} />
+        <div style={{ position: 'absolute', right: '8%', top: 38, width: 220, height: 36, borderRadius: 30, background: 'rgba(251, 146, 60, 0.3)', filter: 'blur(3px)' }} />
+      </div>
+
+      {/* Rặng núi phía xa chìm trong sương chiều */}
+      <div style={{ position: 'absolute', left: '-4%', right: '-4%', bottom: '38%', height: '36%', background: 'linear-gradient(180deg, #431407 0%, #2A0F1D 100%)', clipPath: 'polygon(0% 100%, 0% 58%, 14% 45%, 26% 60%, 42% 38%, 56% 54%, 72% 40%, 86% 56%, 100% 42%, 100% 100%)', opacity: 0.88 }} />
+      <div style={{ position: 'absolute', left: '-4%', right: '-4%', bottom: '34%', height: '32%', background: 'linear-gradient(180deg, #7C2D12 0%, #3B1207 100%)', clipPath: 'polygon(0% 100%, 0% 68%, 16% 50%, 30% 66%, 46% 46%, 62% 64%, 78% 48%, 90% 62%, 100% 52%, 100% 100%)' }} />
+
+      {/* Các tầng ruộng bậc thang vàng óng */}
+      <div style={{ position: 'absolute', left: '-6%', right: '-6%', bottom: '26%', height: '33%', borderRadius: '55% 45% 0 0', background: 'linear-gradient(135deg, #CA8A04 0%, #A16207 55%, #713F12 100%)', borderTop: '2px solid rgba(254, 240, 138, 0.55)' }} />
+      <div style={{ position: 'absolute', left: '30%', right: '-15%', bottom: '20%', height: '31%', borderRadius: '45% 55% 0 0', background: 'linear-gradient(125deg, #EAB308 0%, #CA8A04 55%, #854D0E 100%)', borderTop: '3px solid rgba(254, 240, 138, 0.65)' }} />
+      <div style={{ position: 'absolute', left: '-12%', right: '22%', bottom: '10%', height: '28%', borderRadius: '52% 48% 0 0', background: 'linear-gradient(115deg, #FACC15 0%, #D97706 60%, #92400E 100%)', borderTop: '3px solid rgba(255, 251, 235, 0.75)' }} />
+
+      {/* Mặt ruộng lúa trĩu bông phía dưới */}
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '24%', background: 'linear-gradient(#B45309 0%, #451A03 100%)' }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '24%', background: 'repeating-linear-gradient(102deg, rgba(254, 240, 138, 0.16) 0 3px, transparent 3px 26px)' }} />
+
+      {/* Bông lúa trĩu hạt tiền cảnh đu đưa trong gió chiều */}
+      <RiceStalks
+        style={{
+          position: 'absolute',
+          left: 20,
+          bottom: -10,
+          width: 140,
+          height: 230,
+          transformOrigin: 'bottom center',
+          animation: 'bgPaddySway 4.4s ease-in-out infinite alternate',
+        }}
+      />
+      <RiceStalks
+        style={{
+          position: 'absolute',
+          right: 25,
+          bottom: -10,
+          width: 140,
+          height: 230,
+          transformOrigin: 'bottom center',
+          transform: 'scaleX(-1)',
+          animation: 'bgPaddySway 5.2s ease-in-out 0.6s infinite alternate',
+        }}
+      />
+
+      {/* Đốm sáng phấn lúa / đom đóm hoàng hôn bay là đà */}
+      {PADDY_POLLEN.map((p, i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            left: p.left,
+            top: p.top,
+            width: p.size,
+            height: p.size,
+            borderRadius: '50%',
+            background: '#FEF08A',
+            boxShadow: '0 0 10px 3px rgba(250, 204, 21, 0.85)',
+            animation: `bgPollenDrift ${p.dur} ease-out ${p.delay} infinite`,
+          }}
+        />
+      ))}
+
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '36%', background: 'linear-gradient(rgba(38,22,9,0), rgba(30,15,6,.5))' }} />
+    </div>
+  );
+}
+
+function CityScene() {
+  return (
+    <div style={{ ...fill, background: 'linear-gradient(180deg, #070913 0%, #0F172A 32%, #1E1B4B 60%, #2E1065 80%, #3B0764 100%)' }}>
+      {/* Ánh sáng neon hắt lên từ thành phố */}
+      <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 95% 45% at 50% 88%, rgba(244, 63, 94, 0.22), rgba(14, 165, 233, 0.16) 60%, transparent 85%)' }} />
+
+      {/* Đường chân trời xa (Distant silhouette) */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: '14%',
+          height: '46%',
+          background: 'linear-gradient(180deg, #17153B 0%, #0A0A18 100%)',
+          clipPath: 'polygon(0% 100%, 0% 50%, 5% 50%, 5% 42%, 11% 42%, 11% 56%, 18% 56%, 18% 38%, 26% 38%, 26% 52%, 34% 52%, 34% 44%, 42% 44%, 42% 34%, 52% 34%, 52% 48%, 60% 48%, 60% 38%, 68% 38%, 68% 54%, 76% 54%, 76% 42%, 84% 42%, 84% 50%, 92% 50%, 92% 40%, 100% 40%, 100% 100%)',
+          opacity: 0.75,
+        }}
+      />
+
+      {/* Các toà tháp trung cảnh với cửa sổ sáng đèn */}
+      {/* Toà 1 - Tháp ăng-ten bên trái */}
+      <div style={{ position: 'absolute', left: '12%', bottom: '10%', width: 100, height: '48%', background: 'linear-gradient(180deg, #181938, #0C0F1A)', boxShadow: '0 0 20px rgba(0,0,0,0.6)' }}>
+        <div style={{ position: 'absolute', left: '48%', top: -56, width: 3, height: 56, background: '#64748B' }} />
+        <div style={{ position: 'absolute', inset: 8, background: 'repeating-linear-gradient(0deg, rgba(254, 240, 138, 0.45) 0 3px, transparent 3px 9px), repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 4px, transparent 4px 10px)', opacity: 0.85 }} />
+      </div>
+
+      {/* Toà 2 - Toà nhà hiện đại mái cyan */}
+      <div style={{ position: 'absolute', left: '26%', bottom: '10%', width: 125, height: '42%', background: 'linear-gradient(180deg, #1E1B4B, #0F172A)' }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 4, background: '#06B6D4', boxShadow: '0 0 14px #06B6D4' }} />
+        <div style={{ position: 'absolute', inset: 10, background: 'repeating-linear-gradient(0deg, rgba(253, 224, 71, 0.35) 0 4px, transparent 4px 12px), repeating-linear-gradient(90deg, rgba(56, 189, 248, 0.2) 0 5px, transparent 5px 12px)' }} />
+      </div>
+
+      {/* Toà 3 - Toà tháp trung tâm cao nhất với 2 cột ăng-ten */}
+      <div style={{ position: 'absolute', left: '47%', bottom: '10%', width: 140, height: '62%', background: 'linear-gradient(180deg, #241A47, #0B0A1C)', boxShadow: '0 0 30px rgba(0,0,0,0.8)' }}>
+        <div style={{ position: 'absolute', left: '20%', top: -65, width: 2, height: 65, background: '#94A3B8' }} />
+        <div style={{ position: 'absolute', right: '20%', top: -65, width: 2, height: 65, background: '#94A3B8' }} />
+        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: 'linear-gradient(180deg, #F43F5E, #38BDF8)' }} />
+        <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 2, background: 'linear-gradient(180deg, #38BDF8, #F43F5E)' }} />
+        <div style={{ position: 'absolute', inset: 12, background: 'repeating-linear-gradient(0deg, rgba(254, 240, 138, 0.5) 0 3px, transparent 3px 10px), repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 4px, transparent 4px 10px)' }} />
+      </div>
+
+      {/* Toà 4 - Toà nhà vát góc bên phải */}
+      <div style={{ position: 'absolute', left: '67%', bottom: '10%', width: 115, height: '46%', background: 'linear-gradient(180deg, #1C1A3F, #0E1020)', clipPath: 'polygon(0 8%, 100% 0, 100% 100%, 0 100%)' }}>
+        <div style={{ position: 'absolute', inset: 8, top: 20, background: 'repeating-linear-gradient(0deg, rgba(253, 186, 116, 0.4) 0 3px, transparent 3px 11px), repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.08) 0 4px, transparent 4px 10px)' }} />
+      </div>
+
+      {/* Toà 5 - Toà nhà cao tầng góc phải */}
+      <div style={{ position: 'absolute', right: '8%', bottom: '10%', width: 105, height: '54%', background: 'linear-gradient(180deg, #201D45, #0B0D18)' }}>
+        <div style={{ position: 'absolute', left: '50%', top: -45, width: 2, height: 45, background: '#64748B' }} />
+        <div style={{ position: 'absolute', inset: 8, background: 'repeating-linear-gradient(0deg, rgba(254, 240, 138, 0.4) 0 4px, transparent 4px 12px), repeating-linear-gradient(90deg, rgba(56, 189, 248, 0.15) 0 4px, transparent 4px 11px)' }} />
+      </div>
+
+      {/* Đèn tín hiệu hàng không chớp tắt */}
+      {CITY_BEACONS.map((b, i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            left: b.left,
+            bottom: b.bottom,
+            width: 7,
+            height: 7,
+            marginLeft: -3.5,
+            borderRadius: '50%',
+            background: b.color,
+            boxShadow: `0 0 12px 4px ${b.color}`,
+            animation: `bgBeaconBlink ${b.dur} ease-in-out ${b.delay} infinite`,
+          }}
+        />
+      ))}
+
+      {/* Vệt sáng xe cộ trên đại lộ phía dưới */}
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: '8%', height: 35, background: 'linear-gradient(90deg, rgba(239,68,68,0.38) 0%, rgba(245,158,11,0.32) 30%, rgba(56,189,248,0.36) 70%, rgba(236,72,153,0.35) 100%)', filter: 'blur(16px)' }} />
+
+      {/* ── KHUNG CỬA SỔ PENTHOUSE ── */}
+      {/* Vệt phản chiếu ánh sáng kính */}
+      <div style={{ ...fill, background: 'linear-gradient(130deg, rgba(255,255,255,0.04) 0%, transparent 45%, rgba(255,255,255,0.015) 100%)' }} />
+
+      {/* Cột dọc chia khung cửa sổ 1 (33%) */}
+      <div style={{ position: 'absolute', left: '33%', top: 0, bottom: 0, width: 14, background: 'linear-gradient(90deg, #11151F 0%, #222B3D 50%, #0E121B 100%)', boxShadow: 'inset 1px 0 0 rgba(255,255,255,0.12), inset -1px 0 0 rgba(0,0,0,0.6)' }} />
+      {/* Cột dọc chia khung cửa sổ 2 (67%) */}
+      <div style={{ position: 'absolute', left: '67%', top: 0, bottom: 0, width: 14, background: 'linear-gradient(90deg, #11151F 0%, #222B3D 50%, #0E121B 100%)', boxShadow: 'inset 1px 0 0 rgba(255,255,255,0.12), inset -1px 0 0 rgba(0,0,0,0.6)' }} />
+      {/* Thanh ngang cửa sổ */}
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: '26%', height: 12, background: 'linear-gradient(180deg, #222B3D 0%, #11151F 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -1px 0 rgba(0,0,0,0.6)' }} />
+
+      {/* Bệ cửa sổ phía dưới */}
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '10%', background: 'linear-gradient(180deg, #1A1F2B 0%, #0F121A 40%, #080A0E 100%)', borderTop: '2px solid rgba(255,255,255,0.15)', boxShadow: '0 -6px 24px rgba(0,0,0,0.7)' }} />
+
+      {/* Hạt mưa / ngưng tụ trên kính */}
+      {CITY_DROPS.map((d, i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            left: d.left,
+            top: d.top,
+            width: 2,
+            height: d.height,
+            borderRadius: 2,
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.7) 0%, rgba(56,189,248,0.4) 60%, transparent 100%)',
+            animation: `bgRainSlide ${d.dur} linear ${d.delay} infinite`,
+          }}
+        />
+      ))}
+
+      {/* Hơi ấm căn phòng phản chiếu nhẹ ở bệ cửa */}
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '14%', background: 'linear-gradient(to top, rgba(255,180,100,0.07) 0%, transparent 100%)' }} />
+    </div>
+  );
+}
+
 const SCENES: Record<BgTheme, () => React.JSX.Element> = {
-  cafe: CafeScene, meadow: MeadowScene, forest: ForestScene, park: ParkScene,
+  cafe: CafeScene,
+  meadow: MeadowScene,
+  forest: ForestScene,
+  park: ParkScene,
+  space: SpaceScene,
+  paddy: PaddyScene,
+  city: CityScene,
 };
 
 /**

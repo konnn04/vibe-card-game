@@ -311,6 +311,8 @@ export type GameEvent =
   | { t: 'challenge'; playerId: string; targetId: string; success: boolean; revealedCard?: Card }
   | { t: 'rush'; playerId: string }
   | { t: 'caught'; playerId: string; amount: number }
+  /** Party — `playerId` đã bầu (KHÔNG kèm bầu ai: phiếu kín tới khi lộ kết quả). */
+  | { t: 'vote'; playerId: string }
   /** Party — mở vòng bình chọn Chỉ tay. */
   | { t: 'voteStart'; by: string; deadline: number }
   /** Party — lộ kết quả: `tally` người -> số phiếu, `votes` người bầu -> người bị bầu. */

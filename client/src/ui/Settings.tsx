@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { ThemePicker } from './ThemePicker';
+import { CompactSelect } from './CustomSelect';
 import { BUILD } from '@/src/generated/version';
 import { useSettings, type Graphics, type Locale, type FpsLimit } from '@/src/lib/settings';
 import { defaultMusicFile, musicTracks, playSfx, refreshMusicVolume, reloadMusic } from '@/src/lib/audio';
@@ -161,44 +162,20 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </div>
         </Section>
 
-        {/* CHỌN NHẠC NỀN — danh sách lấy từ public/music-theme/manifest.json,
-            tên hiển thị là tên đầy đủ (file trên đĩa đã được đổi thành slug an
-            toàn, xem public/music-theme/README.md). */}
+        {/* CHỌN NHẠC NỀN — dùng CompactSelect gọn gàng */}
         <Section title={t('musicTrack')}>
           <div className="flex flex-col gap-2">
-            <button
-              className="rounded-xl px-4 py-3 text-left"
-              style={
-                s.musicTrack === 'random'
-                  ? { background: 'linear-gradient(140deg,rgba(255,211,77,.24),rgba(255,158,44,.14))', border: '2px solid #FFD34D' }
-                  : { background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.16)' }
-              }
-              onClick={() => { s.set('musicTrack', 'random'); reloadMusic(); playSfx('click'); }}
-            >
-              <div className="display text-[18px]" style={{ color: s.musicTrack === 'random' ? '#FFD34D' : '#EDE0FA' }}>
-                {t('musicRandom')}
-              </div>
-              <div className="text-[12px] font-semibold text-[#A48AC8]">{t('musicRandomSub')}</div>
-            </button>
-            {tracks.map((tr) => (
-              <button
-                key={tr.file}
-                className="rounded-xl px-4 py-3 text-left"
-                style={
-                  selectedTrack === tr.file
-                    ? { background: 'linear-gradient(140deg,rgba(255,211,77,.24),rgba(255,158,44,.14))', border: '2px solid #FFD34D' }
-                    : { background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.16)' }
-                }
-                onClick={() => { s.set('musicTrack', tr.file); reloadMusic(); playSfx('click'); }}
-              >
-                <div
-                  className="text-[14px] font-semibold leading-snug"
-                  style={{ color: selectedTrack === tr.file ? '#FFD34D' : '#EDE0FA' }}
-                >
-                  {tr.title}
-                </div>
-              </button>
-            ))}
+            <CompactSelect
+              value={selectedTrack}
+              options={[
+                { value: 'random', label: t('musicRandom'), sublabel: t('musicRandomSub') },
+                ...tracks.map((tr) => ({ value: tr.file, label: tr.title })),
+              ]}
+              onChange={(track) => {
+                s.set('musicTrack', track);
+                reloadMusic();
+              }}
+            />
             {!tracks.length && (
               <div className="text-[12px] font-semibold text-[#A48AC8]">{t('musicEmpty')}</div>
             )}

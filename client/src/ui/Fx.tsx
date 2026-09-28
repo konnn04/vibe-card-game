@@ -69,52 +69,80 @@ function ExplodeMoment({ name, cards, isMe, particles, at }: { name: string; car
       };
     });
   }, [cards, name, particles]);
-  // Neo ĐÚNG ghế người nổ (chiếu từ bàn 3D — xem useSeatScreen). Chưa có toạ độ
-  // (khung đầu tiên) thì nổ giữa màn. Kẹp vào trong màn để chữ không bị cắt.
+  // Toạ độ thực của ghế nổ (chiếu từ bàn 3D qua useSeatScreen)
   const w = typeof window !== 'undefined' ? window.innerWidth : 1280;
   const h = typeof window !== 'undefined' ? window.innerHeight : 720;
-  const x = Math.min(w - 150, Math.max(150, at?.x ?? w / 2));
-  const y = Math.min(h - 110, Math.max(110, at?.y ?? h / 2));
+  const originX = at?.x ?? w / 2;
+  const originY = at?.y ?? h / 2;
+
+  // Text nổ kẹp trong màn hình để không bị lẹm mép trên/dưới/trái/phải
+  const textX = Math.min(w - 170, Math.max(170, originX));
+  const textY = Math.min(h - 120, Math.max(90, originY));
+
   return (
     <motion.div
       className="pointer-events-none absolute inset-0 z-40"
       initial={{ opacity: 1 }}
       animate={{ opacity: [1, 1, 0] }}
       transition={{ duration: 1.5, times: [0, 0.8, 1] }}
-      style={{ animation: 'penaltyShock 0.5s cubic-bezier(.2,.7,.3,1)' }}
     >
-      {/* Mọi phần tử con đặt theo tâm (0,0) của điểm neo này. */}
-      <div className="absolute" style={{ left: x, top: y, width: 0, height: 0 }}>
+      {/* Vệt đỏ viền màn hình tạo chấn động thị giác */}
+      <motion.div
+        className="absolute inset-0"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: [0, 0.75, 0] }}
+        transition={{ duration: 0.6, times: [0, 0.2, 1] }}
+        style={{
+          background: 'radial-gradient(ellipse at center, transparent 40%, rgba(226,59,46,0.48) 100%)',
+        }}
+      />
+
+      {/* Dư chấn & sóng xung kích lan toả: đặt CHÍNH XÁC tại toạ độ ghế originX, originY */}
+      <div className="absolute" style={{ left: originX, top: originY, width: 0, height: 0 }}>
+        {/* Quầng sáng nổ tâm */}
         <motion.div
-          className="absolute rounded-full"
+          className="absolute rounded-full pointer-events-none"
           style={{ left: -260, top: -260, width: 520, height: 520, background: 'radial-gradient(circle at center, #FFF3DA 0%, #FF8410 35%, rgba(226,59,46,0) 70%)' }}
-          initial={{ opacity: 0.95, scale: 0.4 }}
-          animate={{ opacity: 0, scale: 1.2 }}
-          transition={{ duration: 0.5 }}
+          initial={{ opacity: 0.95, scale: 0.35 }}
+          animate={{ opacity: 0, scale: 1.3 }}
+          transition={{ duration: 0.55 }}
         />
-        {[0, 0.12].map((delay) => (
+        {/* Các vòng sóng dư chấn nở to dần từ tâm ghế */}
+        {[0, 0.1, 0.22].map((delay, idx) => (
           <motion.div
             key={delay}
-            className="absolute rounded-full"
-            style={{ left: -60, top: -60, width: 120, height: 120, border: '10px solid #FFD34D', boxShadow: '0 0 40px #FF8410' }}
-            initial={{ scale: 0.2, opacity: 1 }}
-            animate={{ scale: 4, opacity: 0 }}
-            transition={{ duration: 0.8, delay, ease: 'easeOut' }}
+            className="absolute rounded-full pointer-events-none"
+            style={{
+              left: -70,
+              top: -70,
+              width: 140,
+              height: 140,
+              border: `${8 - idx * 2}px solid ${idx === 0 ? '#FFD34D' : idx === 1 ? '#FF8410' : '#E23B2E'}`,
+              boxShadow: `0 0 40px ${idx === 0 ? '#FF8410' : '#E23B2E'}, inset 0 0 25px rgba(255,132,16,0.5)`,
+            }}
+            initial={{ scale: 0.15, opacity: 1 }}
+            animate={{ scale: 4.5, opacity: 0 }}
+            transition={{ duration: 0.85, delay, ease: [0.15, 0.8, 0.25, 1] }}
           />
         ))}
+        {/* Mảnh vụn bay ra từ tâm nổ */}
         {bits.map((b, i) => (
           <motion.div
             key={i}
-            className="absolute rounded-[3px]"
+            className="absolute rounded-[3px] pointer-events-none"
             style={{ left: -b.s / 2, top: -b.s * 0.7, width: b.s, height: b.s * 1.4, background: b.c }}
             initial={{ x: 0, y: 0, rotate: 0, opacity: 1 }}
-            animate={{ x: b.x, y: b.y + 60, rotate: b.r, opacity: 0 }}
+            animate={{ x: b.x, y: b.y + 50, rotate: b.r, opacity: 0 }}
             transition={{ duration: 1.1, ease: [0.1, 0.8, 0.3, 1] }}
           />
         ))}
+      </div>
+
+      {/* Chữ nổ tung kẹp trong màn hình */}
+      <div className="absolute" style={{ left: textX, top: textY, width: 0, height: 0 }}>
         <motion.div
           className="absolute flex w-[320px] flex-col items-center"
-          style={{ left: -160, top: -70 }}
+          style={{ left: -160, top: -75 }}
           initial={{ scale: 0.3, opacity: 0 }}
           animate={{ scale: [0.3, 1.2, 1], opacity: 1 }}
           transition={{ duration: 0.45, times: [0, 0.6, 1] }}

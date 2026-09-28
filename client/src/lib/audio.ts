@@ -145,11 +145,23 @@ function synth(spec: Spec, vol: number, rate: number) {
   osc.stop(t + spec.dur + 0.02);
 }
 
+const SFX_COOLDOWN_MS: Partial<Record<Sfx, number>> = {
+  rush: 1200,
+};
+const lastPlayTime: Partial<Record<Sfx, number>> = {};
+
 export function playSfx(name: Sfx, rate = 1) {
   const s = useSettings.getState();
   if (s.muteSfx) return;
   const vol = s.masterVolume * s.sfxVolume;
   if (vol <= 0.001) return;
+  const cooldown = SFX_COOLDOWN_MS[name];
+  if (cooldown) {
+    const now = Date.now();
+    const last = lastPlayTime[name] ?? 0;
+    if (now - last < cooldown) return;
+    lastPlayTime[name] = now;
+  }
   const buf = buffers.get(name);
   if (buf) return playBuffer(buf, vol, rate);
   synth(SPEC[name], vol, rate);

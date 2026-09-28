@@ -297,6 +297,63 @@ option { background: #241536; }
 @keyframes bgLeafFall  { 0% { opacity: 0; transform: translate(0, -40px) rotate(0deg); } 12% { opacity: .9; } 100% { opacity: 0; transform: translate(-160px, 520px) rotate(420deg); } }
 @keyframes bgGrassWave { 0%, 100% { transform: skewX(-3deg); } 50% { transform: skewX(3deg); } }
 
+/* Chủ đề Không gian (Space) */
+@keyframes bgPlanetFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(-16px) rotate(2deg); }
+}
+@keyframes bgPlanetFloatAlt {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(14px) rotate(-1.5deg); }
+}
+@keyframes bgMeteor {
+  0% { opacity: 0; transform: translate(-80px, -60px) rotate(-35deg) scaleX(0.2); }
+  3% { opacity: 1; transform: translate(0, 0) rotate(-35deg) scaleX(1); }
+  9% { opacity: 0; transform: translate(520px, 360px) rotate(-35deg) scaleX(1.4); }
+  100% { opacity: 0; transform: translate(520px, 360px) rotate(-35deg) scaleX(1.4); }
+}
+
+/* Chủ đề Đồng lúa chiều (Paddy) */
+@keyframes bgSunPulse {
+  0%, 100% { transform: scale(1); opacity: 0.92; filter: drop-shadow(0 0 35px rgba(251,191,36,0.6)); }
+  50%      { transform: scale(1.06); opacity: 1; filter: drop-shadow(0 0 60px rgba(249,115,22,0.85)); }
+}
+@keyframes bgPaddySway {
+  0%   { transform: rotate(-3.5deg) skewX(-2deg); }
+  50%  { transform: rotate(3deg) skewX(2deg); }
+  100% { transform: rotate(-3.5deg) skewX(-2deg); }
+}
+@keyframes bgPollenDrift {
+  0%   { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  25%  { opacity: 0.85; }
+  80%  { opacity: 0.85; }
+  100% { opacity: 0; transform: translate(70px, -130px) scale(1.15); }
+}
+
+/* Chủ đề View cửa sổ thành phố (City) */
+@keyframes bgBeaconBlink {
+  0%, 100% { opacity: 0.15; transform: scale(0.85); }
+  45%      { opacity: 0.2; transform: scale(0.85); }
+  50%      { opacity: 1; transform: scale(1.3); }
+  55%      { opacity: 0.2; transform: scale(0.85); }
+}
+@keyframes bgRainSlide {
+  0%   { opacity: 0; transform: translateY(-16px); }
+  15%  { opacity: 0.65; }
+  85%  { opacity: 0.65; }
+  100% { opacity: 0; transform: translateY(50px); }
+}
+
+/* ── Cảnh báo sắp nổ (Mercy / Vỡ trận) ── */
+@keyframes dangerPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.95; }
+}
+@keyframes dangerPulseFast {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+
 /* ── TRANG PHÁP LÝ (/legal/*) ──────────────────────────────────────────────
    Hai trang tĩnh, phải đọc được cả khi JavaScript hỏng và trong webview chật
    của Discord. Không dùng lại class nào của HUD/menu để chúng không bao giờ bị

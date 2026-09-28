@@ -111,13 +111,16 @@ export function CompactSelect<T extends string | number | boolean>({
           compact ? 'py-1.5 text-[13px]' : 'py-2 text-[14px]'
         } text-[#FFF3DA] ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
       >
-        <span className="font-semibold">{selectedOpt?.label ?? String(value)}</span>
-        <ChevronDown size={14} className={`text-[#FFD34D] transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span className="flex items-center gap-2 truncate">
+          {selectedOpt?.icon && <span className="shrink-0">{selectedOpt.icon}</span>}
+          <span className="font-semibold truncate">{selectedOpt?.label ?? String(value)}</span>
+        </span>
+        <ChevronDown size={14} className={`text-[#FFD34D] shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
         <div
-          className="absolute left-0 top-full z-50 mt-1 max-h-56 w-full min-w-[120px] overflow-auto rounded-xl border border-amber-500/30 bg-[#1e0e15]/95 p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
+          className="absolute left-0 top-full z-50 mt-1 max-h-56 w-full min-w-[140px] overflow-auto rounded-xl border border-amber-500/30 bg-[#1e0e15]/95 p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
         >
           {options.map((opt) => {
             const isSelected = opt.value === value;
@@ -130,17 +133,18 @@ export function CompactSelect<T extends string | number | boolean>({
                   onChange(opt.value);
                   setOpen(false);
                 }}
-                className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[13px] font-semibold transition-all ${
+                className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] font-semibold transition-all ${
                   isSelected
                     ? 'bg-gradient-to-r from-[#FFD34D]/25 to-[#FF9E2C]/25 text-[#FFD34D]'
                     : 'text-[#FFE5C4]/80 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                <div>
-                  <span>{opt.label}</span>
-                  {opt.sublabel && <span className="ml-1.5 text-[11px] text-[#C79A76]">({opt.sublabel})</span>}
+                <div className="flex items-center gap-2 truncate">
+                  {opt.icon && <span className="shrink-0">{opt.icon}</span>}
+                  <span className="truncate">{opt.label}</span>
+                  {opt.sublabel && <span className="ml-1.5 shrink-0 text-[11px] text-[#C79A76]">({opt.sublabel})</span>}
                 </div>
-                {isSelected && <Check size={13} className="text-[#FFD34D]" />}
+                {isSelected && <Check size={13} className="text-[#FFD34D] shrink-0" />}
               </button>
             );
           })}

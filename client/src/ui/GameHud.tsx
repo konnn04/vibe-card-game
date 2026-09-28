@@ -193,7 +193,37 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
   const playS = () => { if (sCard) act({ type: 'PLAY', playerId: myId, cardId: sCard.id }); };
 
   const needDrawPrompt = myTurn && (!hasPlayable || !!state?.pending) && canDraw;
-  const canCallRush = !!me && me.hand.length === 1 && !me.calledRush;
+  const isChoosing =
+    (state?.phase === 'awaitColor' && state?.resume?.playerId === myId) ||
+    (state?.phase === 'awaitSwapTarget' && state?.resume?.playerId === myId) ||
+    (state?.phase === 'awaitChain' && state?.resume?.playerId === myId) ||
+    (state?.phase === 'awaitVote' && !!state?.vote);
+  const [callingRush, setCallingRush] = useState(false);
+  useEffect(() => {
+    if (!me || me.hand.length !== 1 || me.calledRush) {
+      setCallingRush(false);
+    }
+  }, [me?.hand.length, me?.calledRush]);
+
+  const canCallRush = !!me && me.hand.length === 1 && !me.calledRush && !callingRush && !isChoosing;
+
+  const handleCallRush = () => {
+    if (!canCallRush || callingRush) return;
+    setCallingRush(true);
+    playSfx('rush');
+    act({ type: 'CALL_RUSH', playerId: myId });
+  };
+
+  // Cảnh báo sắp nổ (Mercy / Vỡ trận): khi luật blowUp bật, còn <= 3 lá là tới giới hạn hoặc pending sắp nổ
+  const blowUp = !!state?.rules.blowUp;
+  const blowUpAt = state?.rules.blowUpAt ?? 36;
+  const handCount = me?.hand.length ?? 0;
+  const remainingToLimit = blowUpAt - handCount;
+  const pendingAmount = (myTurn && state?.pending && state.pending.value !== 'drawColor') ? state.pending.amount : 0;
+  const willExplodeIfDraw = pendingAmount > 0 && (handCount + pendingAmount > blowUpAt);
+  const isNearBlowUp = seated && !me?.eliminated && blowUp && (remainingToLimit <= 3 || willExplodeIfDraw);
+  const isCriticalBlowUp = isNearBlowUp && (remainingToLimit <= 1 || willExplodeIfDraw);
+
   /**
    * Chỉ được BẮT sau khi hết ân hạn RUSH_GRACE_MS — trong khoảng đó chỉ chủ
    * nhân được hô. Engine cũng từ chối bắt sớm, đây chỉ là để nút khỏi hiện ra
@@ -258,7 +288,7 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
       // bắt người đang thiếu tiếng hô. Không bao giờ mập mờ vì 2 điều kiện loại
       // trừ nhau (không thể vừa là chủ cửa sổ vừa là người đi bắt).
       if (isSpace || is('w')) {
-        if (canCallRush) return run(() => { playSfx('rush'); act({ type: 'CALL_RUSH', playerId: myId }); });
+        if (canCallRush) return run(handleCallRush);
         if (catchableId) return run(() => act({ type: 'CATCH_RUSH', playerId: myId, targetId: catchableId }));
       }
     };
@@ -295,6 +325,26 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
 
   return (
     <div className="pointer-events-none absolute inset-0 select-none">
+      {/* Viền đỏ nhẹ cảnh báo sắp nổ (Mercy / Vỡ trận) */}
+      <AnimatePresence>
+        {isNearBlowUp && (
+          <motion.div
+            key="danger-vignette"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="pointer-events-none fixed inset-0 z-10"
+            style={{
+              boxShadow: isCriticalBlowUp
+                ? 'inset 0 0 50px rgba(239,68,68,0.45), inset 0 0 100px rgba(220,38,38,0.22)'
+                : 'inset 0 0 35px rgba(239,68,68,0.3), inset 0 0 70px rgba(220,38,38,0.12)',
+              animation: isCriticalBlowUp ? 'dangerPulseFast 1.3s ease-in-out infinite' : 'dangerPulse 2.2s ease-in-out infinite',
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       <div className={`pointer-events-auto absolute ${isMobile ? 'left-2.5 top-2 gap-1.5' : 'left-6 top-6 gap-2'} flex items-center`}>
         <button className={`btn btn--ghost ${isMobile ? '!py-1 !px-2.5 !text-[13px]' : '!py-2 !text-[17px]'}`} onClick={onExit}>‹ {t('backToMenu')}</button>
         <button
@@ -420,6 +470,46 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
         </motion.div>
       </div>
 
+      {/* Tip cảnh báo sắp nổ (Mercy / Vỡ trận) */}
+      <AnimatePresence>
+        {isNearBlowUp && (
+          <motion.div
+            key="danger-tip"
+            initial={{ opacity: 0, y: -8, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.95 }}
+            transition={{ duration: 0.25 }}
+            className={`pointer-events-none absolute left-1/2 -translate-x-1/2 ${isMobile ? 'top-[44px]' : 'top-[132px]'} z-20 flex items-center gap-2 rounded-full border px-3.5 py-1 backdrop-blur-md shadow-xl`}
+            style={{
+              background: 'linear-gradient(135deg, rgba(65, 10, 14, 0.92), rgba(28, 4, 8, 0.95))',
+              borderColor: isCriticalBlowUp ? 'rgba(239, 68, 68, 0.85)' : 'rgba(239, 68, 68, 0.55)',
+              boxShadow: isCriticalBlowUp
+                ? '0 6px 20px rgba(0,0,0,0.6), 0 0 20px rgba(239,68,68,0.45)'
+                : '0 6px 18px rgba(0,0,0,0.5), 0 0 12px rgba(239,68,68,0.25)',
+            }}
+          >
+            <span className="text-[13px] md:text-[15px] animate-pulse">⚠️</span>
+            <span className={`display font-semibold tracking-wide ${isMobile ? 'text-[12px]' : 'text-[14px]'} text-[#FEE2E2]`}>
+              {willExplodeIfDraw
+                ? t('nearBlowUpPending', { n: pendingAmount })
+                : remainingToLimit <= 0
+                  ? t('atBlowUpLimit', { limit: blowUpAt })
+                  : t('nearBlowUpTip', { count: handCount, limit: blowUpAt, remaining: remainingToLimit })}
+            </span>
+            <span
+              className={`label rounded-full px-2 py-0.5 ${isMobile ? 'text-[10px]' : 'text-[11px]'} font-bold text-white shadow`}
+              style={{ background: 'linear-gradient(90deg, #DC2626, #991B1B)' }}
+            >
+              {willExplodeIfDraw
+                ? `+${pendingAmount} 💥`
+                : remainingToLimit <= 0
+                  ? t('nextCardExplodes')
+                  : t('cardsLeftToLimit', { n: remainingToLimit })}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* HUD của mình: vòng đếm ngược quanh avatar — gọn để không lấn quạt bài */}
       {seated && (
         <div className={`absolute ${isMobile ? 'bottom-2 left-2.5 gap-1.5' : 'bottom-5 left-5 gap-2'} flex items-center`}>
@@ -476,8 +566,8 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
             >
               {me?.name}
             </div>
-            <div className={`label ${isMobile ? 'mt-0.5 text-[10px]' : 'mt-1 text-[12px]'} text-[#FFE0B3]`}>
-              {t('cards', { n: me?.hand.length ?? 0 })} · {me?.score ?? 0}
+            <div className={`label ${isMobile ? 'mt-0.5 text-[10px]' : 'mt-1 text-[12px]'} ${isNearBlowUp ? '!text-red-400 font-bold' : 'text-[#FFE0B3]'}`}>
+              {t('cards', { n: me?.hand.length ?? 0 })} {isNearBlowUp && '⚠️'} · {me?.score ?? 0}
             </div>
           </div>
           <EmotePicker size={isMobile ? 28 : 36} onPick={(emote) => act({ type: 'EMOTE', playerId: myId, emote })} />
@@ -515,14 +605,14 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
       {seated && (
         <div className={`pointer-events-auto absolute ${isMobile ? 'bottom-2.5 right-3 gap-2' : 'bottom-8 right-9 gap-3'} flex flex-col items-center`}>
           <AnimatePresence>
-            {me && me.hand.length === 1 && !me.calledRush && (
+            {canCallRush && (
               <motion.button
                 key="rush"
                 initial={{ scale: 0, rotate: -20 }}
                 animate={{ scale: 1, rotate: 0 }}
                 exit={{ scale: 0, opacity: 0 }}
                 whileTap={{ scale: 0.92 }}
-                onClick={() => { playSfx('rush'); act({ type: 'CALL_RUSH', playerId: myId }); }}
+                onClick={handleCallRush}
                 className={`display grid place-items-center rounded-full ${isMobile ? 'text-[22px]' : 'text-[38px]'}`}
                 style={{
                   width: isMobile ? 74 : 132,

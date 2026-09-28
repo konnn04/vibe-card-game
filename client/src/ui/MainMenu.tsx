@@ -403,10 +403,7 @@ export function MainMenu({ onQuick, onCreate, onJoin, onSolo, onProfile, onSetti
         <button className={roundBtn} style={roundStyle} onClick={() => { playSfx('click'); onHowTo(); }} aria-label={t('howTo')} title={t('howTo')}>
           <span className={`display ${isMobileLandscape ? 'text-[16px]' : 'text-[20px]'}`}>i</span>
         </button>
-        <button className={roundBtn} style={roundStyle} onClick={() => { playSfx('click'); onSettings(); }} aria-label={ts('musicTrack')} title={ts('musicTrack')}>
-          ♪
-        </button>
-        <button className={roundBtn} style={roundStyle} onClick={() => { playSfx('click'); onSettings(); }} aria-label={t('settings')}>
+        <button className={roundBtn} style={roundStyle} onClick={() => { playSfx('click'); onSettings(); }} aria-label={t('settings')} title={t('settings')}>
           ⚙
         </button>
       </div>

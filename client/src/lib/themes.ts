@@ -16,7 +16,7 @@
  * Mọi chuyển động chỉ dùng transform/opacity/filter để chạy trên GPU compositor.
  * ───────────────────────────────────────────────────────────────────────── */
 
-export type BgTheme = 'cafe' | 'meadow' | 'forest' | 'park';
+export type BgTheme = 'cafe' | 'meadow' | 'forest' | 'park' | 'space' | 'paddy' | 'city';
 
 export interface ThemeMeta {
   id: BgTheme;
@@ -93,6 +93,45 @@ export const THEMES: readonly ThemeMeta[] = [
       base: '#4A4326',
     },
     table: { inner: '#FFD79A', mid: '#B5853F', outer: '#463A1E', rim: '#FFE7B0', ambient: 0.86, fog: '#33290F' },
+  },
+  {
+    id: 'space',
+    swatch: 'linear-gradient(140deg,#0a091e,#4f46e5,#06b6d4)',
+    tagline: 'infinite cosmic starlight',
+    menu: {
+      ink: '#E0F2FE',
+      glow: '0 0 8px #38BDF8, 0 0 28px rgba(99,102,241,.8), 0 0 65px rgba(56,189,248,.55)',
+      tagInk: '#7DD3FC', tagBg: 'transparent', tagPad: '0',
+      tagGlow: '0 0 16px rgba(56,189,248,.85)',
+      base: '#070814',
+    },
+    table: { inner: '#6366F1', mid: '#1E1B4B', outer: '#090A15', rim: '#38BDF8', ambient: 0.65, fog: '#060713' },
+  },
+  {
+    id: 'paddy',
+    swatch: 'linear-gradient(140deg,#EA580C,#EAB308,#713F12)',
+    tagline: 'golden sunset rice terraces',
+    menu: {
+      ink: '#FFFBEB',
+      glow: '0 0 8px #F59E0B, 0 0 28px rgba(234,88,12,.8), 0 0 65px rgba(202,138,4,.6)',
+      tagInk: '#FEF08A', tagBg: 'transparent', tagPad: '0',
+      tagGlow: '0 0 16px rgba(245,158,11,.85)',
+      base: '#261609',
+    },
+    table: { inner: '#FDE047', mid: '#B45309', outer: '#291807', rim: '#FACC15', ambient: 0.85, fog: '#1C0F05' },
+  },
+  {
+    id: 'city',
+    swatch: 'linear-gradient(140deg,#1e1b4b,#0f172a,#f43f5e)',
+    tagline: 'penthouse skyline night view',
+    menu: {
+      ink: '#F8FAFC',
+      glow: '0 0 8px #F43F5E, 0 0 28px rgba(14,165,233,.75), 0 0 65px rgba(244,63,94,.55)',
+      tagInk: '#38BDF8', tagBg: 'transparent', tagPad: '0',
+      tagGlow: '0 0 16px rgba(244,63,94,.85)',
+      base: '#0B0F19',
+    },
+    table: { inner: '#F43F5E', mid: '#1E1B4B', outer: '#080C14', rim: '#38BDF8', ambient: 0.7, fog: '#070B12' },
   },
 ];
 

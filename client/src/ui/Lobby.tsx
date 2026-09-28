@@ -197,7 +197,7 @@ function SeatChip({
             )}
           </div>
 
-          {/* Avatar (ở trên) */}
+          {/* Avatar (ở trên) kèm Ping indicator / BOT badge ở góc dưới phải, lệch xuống 5px */}
           <div className="relative mt-1">
             <Avatar
               name={seat.name}
@@ -207,35 +207,34 @@ function SeatChip({
               self={isMe}
               className="seat__avatar !rounded-full overflow-hidden shadow-md"
             />
-          </div>
-
-          {/* Ping indicator (ở giữa) */}
-          <div className="flex items-center gap-1">
-            {isBot ? (
-              <span
-                className="rounded px-1.5 py-0.2 text-[9px] font-bold"
-                style={{
-                  background: isMe ? 'rgba(0,0,0,0.2)' : 'rgba(168,85,247,0.25)',
-                  color: isMe ? '#2A1508' : '#D8B4FE',
-                  border: isMe ? '1px solid rgba(0,0,0,0.2)' : '1px solid rgba(168,85,247,0.35)',
-                }}
-              >
-                BOT
-              </span>
-            ) : isOnlineMode ? (
-              <span
-                className="flex items-center gap-1 rounded px-1.5 py-0.2 text-[9px] font-bold font-mono"
-                style={{
-                  background: isMe ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.5)',
-                  color: isMe ? '#2A1508' : pingColor,
-                  border: `1px solid ${pingColor}55`,
-                }}
-                title={pingVal != null ? `${pingVal}ms` : 'Ping'}
-              >
-                <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: pingColor }} />
-                <span>{pingVal != null ? `${pingVal}ms` : '---'}</span>
-              </span>
-            ) : null}
+            {/* Ping indicator / BOT badge ở góc dưới phải của avatar, lệch xuống tầm 5px */}
+            <div className="pointer-events-none absolute -bottom-[5px] -right-1 z-10 flex items-center">
+              {isBot ? (
+                <span
+                  className="rounded px-1 py-0.2 text-[8px] font-bold shadow"
+                  style={{
+                    background: isMe ? 'rgba(0,0,0,0.5)' : 'rgba(168,85,247,0.9)',
+                    color: '#FFFFFF',
+                    border: isMe ? '1px solid rgba(0,0,0,0.4)' : '1px solid rgba(168,85,247,0.7)',
+                  }}
+                >
+                  BOT
+                </span>
+              ) : isOnlineMode ? (
+                <span
+                  className="flex items-center gap-1 rounded-full px-1.5 py-0.2 text-[8px] font-bold font-mono shadow-md backdrop-blur-sm"
+                  style={{
+                    background: 'rgba(12,4,8,0.85)',
+                    color: pingColor,
+                    border: `1px solid ${pingColor}88`,
+                  }}
+                  title={pingVal != null ? `${pingVal}ms` : 'Ping'}
+                >
+                  <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: pingColor }} />
+                  <span>{pingVal != null ? `${pingVal}ms` : '---'}</span>
+                </span>
+              ) : null}
+            </div>
           </div>
 
           {/* Tên người chơi (ở dưới) */}
@@ -715,14 +714,16 @@ export function Lobby({
               </div>
 
             {/* Hàng 3: Chủ đề nền */}
-            <div className="flex items-center justify-between rounded-xl bg-black/25 px-3 py-1.5 border border-white/10">
-              <span className="label-sm text-[#FFE5C4]/80">{tr('bgTheme')}</span>
-              <ThemePicker
-                compact
-                value={theme}
-                disabled={!canEdit}
-                onChange={(th) => setTheme(th)}
-              />
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-black/25 px-3 py-1.5 border border-white/10">
+              <span className="label-sm text-[#FFE5C4]/80 shrink-0">{tr('bgTheme')}</span>
+              <div className="w-[180px] sm:w-[220px]">
+                <ThemePicker
+                  compact
+                  value={theme}
+                  disabled={!canEdit}
+                  onChange={(th) => setTheme(th)}
+                />
+              </div>
             </div>
           </div>
 

@@ -106,7 +106,7 @@ test('4. Chồng phạt: +2 -> +4 -> +6 cộng dồn; +2 không lên +4; màu b�
   assert.equal(s.turn, 0);
 });
 
-test('5. Wild Đảo chiều +4: 3+ người phạt người kế theo CHIỀU MỚI; 2 người thì người đánh tự chịu', () => {
+test('5. Wild Đảo chiều +4: 3+ người phạt người kế theo CHIỀU MỚI; 2 người thì phạt đối thủ', () => {
   let s = table(4);
   const r4 = card('wild', 'wildRev4');
   s.players[1].hand.push(r4);
@@ -119,15 +119,34 @@ test('5. Wild Đảo chiều +4: 3+ người phạt người kế theo CHIỀU M
   let t = table(2);
   const r = card('wild', 'wildRev4');
   t.players[0].hand.push(r);
-  t = act(t, { type: 'PLAY', playerId: 'p0', cardId: r.id, chosenColor: 'blue' }).state;
-  assert.equal(t.turn, 0, '2 người: đối thủ bị bỏ qua, người đánh gánh phạt');
+  // Đánh lá WildRev4 không truyền sẵn màu -> vào awaitColor
+  t = act(t, { type: 'PLAY', playerId: 'p0', cardId: r.id }).state;
+  assert.equal(t.phase, 'awaitColor');
+  // Chọn màu -> kết thúc lựa chọn, hiệu ứng đổi chiều + phạt 4 chuyển sang P1
+  t = act(t, { type: 'CHOOSE_COLOR', playerId: 'p0', color: 'blue' }).state;
+  assert.equal(t.direction, -1);
+  assert.equal(t.turn, 1, '2 người: đối thủ p1 nhận phạt, KHÔNG phải p0');
   assert.equal(t.pending.amount, 4);
-  // Người đánh vẫn được chồng lá >= 4 để đẩy phạt sang đối thủ.
+
+  // Nếu p1 không chồng được mà phải rút: p1 rút 4 lá và mất lượt, lượt về lại p0
+  const p1HandBefore = t.players[1].hand.length;
+  t = act(t, { type: 'DRAW', playerId: 'p1' }, t.turnHoldUntil + 1).state;
+  assert.equal(t.players[1].hand.length, p1HandBefore + 4, 'p1 phải gánh 4 lá phạt');
+  assert.equal(t.pending, null);
+  assert.equal(t.turn, 0, 'sau khi p1 nhận phạt, lượt quay về p0');
+
+  // Test thêm trường hợp chồng phạt ngược lại
+  let t2 = table(2);
+  const r2 = card('wild', 'wildRev4');
+  t2.players[0].hand.push(r2);
+  t2 = act(t2, { type: 'PLAY', playerId: 'p0', cardId: r2.id, chosenColor: 'blue' }).state;
+  assert.equal(t2.turn, 1);
+  assert.equal(t2.pending.amount, 4);
   const back = card('red', 'draw4');
-  t.players[0].hand.push(back);
-  t = act(t, { type: 'PLAY', playerId: 'p0', cardId: back.id }, t.turnHoldUntil + 1).state;
-  assert.equal(t.turn, 1);
-  assert.equal(t.pending.amount, 8);
+  t2.players[1].hand.push(back);
+  t2 = act(t2, { type: 'PLAY', playerId: 'p1', cardId: back.id }, t2.turnHoldUntil + 1).state;
+  assert.equal(t2.turn, 0);
+  assert.equal(t2.pending.amount, 8);
 });
 
 test('6. Đổi chiều khi còn 2 người = Cấm lượt; Cấm cả bàn trả lượt về người đánh', () => {
@@ -265,13 +284,21 @@ test('11. Người cuối cùng còn lại thắng ván (và được +250 cho m
   assert.ok(s.lastScores.p0 >= 250);
 });
 
-test('12. Quên hô Ú Nồ: bị bắt sau ân hạn thì rút 2; trong ân hạn thì chưa bắt được', () => {
+test('12. Quên hô Ú Nồ: bị bắt sau ân hạn thì rút 2; trong ân hạn thì chưa bắt được; hô rồi không hô lại được', () => {
   let s = table(3);
   const c = card('red', '1');
   s.players[0].hand = [c, card('red', '2')];
   s = act(s, { type: 'PLAY', playerId: 'p0', cardId: c.id }, 100).state;
   assert.equal(s.rushWindow.playerId, 'p0');
   assert.ok(rejected(s, { type: 'CATCH_RUSH', playerId: 'p1', targetId: 'p0' }, 100 + RUSH_GRACE_MS - 1));
+
+  // Kiểm tra hô Ú Nồ chỉ được 1 lần:
+  let sRush = act(s, { type: 'CALL_RUSH', playerId: 'p0' }, 110).state;
+  assert.equal(sRush.players[0].calledRush, true);
+  assert.equal(sRush.rushWindow, null);
+  // Bấm hô lần 2 bị từ chối, không thể spam tiếng hô hay điểm:
+  assert.ok(rejected(sRush, { type: 'CALL_RUSH', playerId: 'p0' }, 120));
+
   const r = act(s, { type: 'CATCH_RUSH', playerId: 'p1', targetId: 'p0' }, 100 + RUSH_GRACE_MS + 1);
   assert.equal(r.state.players[0].hand.length, 3);
   // Người kế tiếp đã bắt đầu lượt (rút/đánh) -> cửa sổ đóng, hết bắt được.

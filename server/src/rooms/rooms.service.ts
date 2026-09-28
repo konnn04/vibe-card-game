@@ -60,7 +60,7 @@ export function makeToken(): string {
   return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 }
 
-const VALID_THEMES = ['cafe', 'meadow', 'forest', 'park'];
+const VALID_THEMES = ['cafe', 'meadow', 'forest', 'park', 'space', 'paddy', 'city'];
 const isValidTheme = (t?: string): boolean => !!t && VALID_THEMES.includes(t);
 
 @Injectable()
@@ -710,17 +710,22 @@ export class RoomsService {
       return;
     }
 
+    // Party — vòng bầu Chỉ tay (xét TRƯỚC nhánh bot giữ lượt: người giữ lượt ở đây
+    // chỉ là người đánh lá, còn cả bàn cùng bầu). Bot nào chưa bầu thì bầu sớm
+    // (runRoomStep bước 3); bầu hết rồi thì hẹn đúng hạn chốt phiếu (bước 2 TIMEOUT).
+    if (g.phase === 'awaitVote' && g.vote) {
+      const botsLeft = g.players.some((p) => p.isBot && !p.eliminated && !g.vote!.votes[p.id]);
+      this.scheduleRoomStep(
+        room.code,
+        botsLeft ? BOT.pickMs + Math.random() * 400 : Math.max(50, g.vote.deadline - Date.now() + 50),
+      );
+      return;
+    }
+
     if (actor?.isBot) {
       const holdRemain = Math.min(MAX_HOLD_MS, Math.max(0, g.turnHoldUntil - Date.now()));
       const delay = Math.max(holdRemain, g.phase === 'awaitColor' || g.phase === 'awaitSwapTarget' ? 450 : 650);
       this.scheduleRoomStep(room.code, delay);
-      return;
-    }
-
-    // Party — vòng bầu Chỉ tay: bot nào chưa bầu thì bầu sớm (runRoomStep bước 3),
-    // không đợi tới hạn chốt phiếu của người thật.
-    if (g.phase === 'awaitVote' && g.vote && g.players.some((p) => p.isBot && !p.eliminated && !g.vote!.votes[p.id])) {
-      this.scheduleRoomStep(room.code, BOT.pickMs + Math.random() * 400);
       return;
     }
 
@@ -809,7 +814,8 @@ export class RoomsService {
       if (react.type === 'CALL_RUSH' && now - openedAt < 1200) continue;
       if (react.type === 'CATCH_RUSH' && now - openedAt < RUSH_GRACE_MS + 300) continue;
       const { state, events } = reduce(g, react, now);
-      if (events.length && events[0].t !== 'reject') {
+      // Chỉ 'reject' mới là thất bại — nước hợp lệ có thể không phát event nào.
+      if (events[0]?.t !== 'reject') {
         room.game = state;
         room.updatedAt = now;
         this.onBroadcastRoom?.(room.code, events);
@@ -817,6 +823,11 @@ export class RoomsService {
         return;
       }
     }
+
+    // LƯỚI AN TOÀN: bước này không làm gì (chưa tới hạn, bot chưa có việc...) thì
+    // vẫn phải HẸN LẦN SAU. Thiếu dòng này thì phòng không còn bộ hẹn giờ nào và
+    // đứng im cho tới khi có người thao tác — đúng lỗi vòng bầu Chỉ tay treo ở 0s.
+    this.checkAndScheduleRoom(room);
   }
 
   // ------------------------------------------------------------- Sweep & Clean

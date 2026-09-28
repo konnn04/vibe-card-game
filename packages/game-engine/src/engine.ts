@@ -1,5 +1,5 @@
 import type {
-  Action, Card, CardColor, DeckSide, DeckType, EngineResult, GameEvent, GameState, PlayerState, Rules,
+  Action, Card, CardColor, DeckSide, DeckType, EngineResult, GameEvent, GameState, Phase, PlayerState, Rules,
 } from './types';
 import { LIGHT_TO_DARK } from './deck';
 import { mulberry32, shuffle } from './rng';
@@ -479,7 +479,7 @@ function refreshRushWindow(s: GameState, now: number, events: GameEvent[], chang
 
 /** Còn đúng 1 lá -> mở cửa sổ hô RUSH (tự hô hộ nếu tắt luật phạt). */
 function openRushIfOneCard(s: GameState, pi: number, now: number, events: GameEvent[]) {
-  if (s.players[pi].hand.length !== 1) return;
+  if (s.players[pi].hand.length !== 1 || s.players[pi].calledRush) return;
   if (s.rules.rushPenalty) {
     s.players[pi].calledRush = false;
     s.rushWindow = { playerId: s.players[pi].id, openedAt: now, until: now + s.rules.turnSeconds * 1000 };
@@ -495,6 +495,18 @@ function openRushIfOneCard(s: GameState, pi: number, now: number, events: GameEv
  */
 function resolveVote(s: GameState, now: number, events: GameEvent[]) {
   const v = s.vote!;
+  // Đảm bảo bot chưa kịp gửi phiếu trước deadline luôn được tự động bỏ phiếu hợp lệ
+  for (const p of s.players) {
+    if (p.isBot && !p.eliminated && !v.votes[p.id]) {
+      const target = s.players
+        .filter((t) => t.id !== p.id && !t.eliminated && !(s.rules.teamMode && t.team === p.team))
+        .sort((a, b) => a.hand.length - b.hand.length)[0]
+        ?? s.players.find((t) => t.id !== p.id && !t.eliminated);
+      if (target) {
+        v.votes[p.id] = target.id;
+      }
+    }
+  }
   const tally: Record<string, number> = {};
   for (const target of Object.values(v.votes)) if (target) tally[target] = (tally[target] ?? 0) + 1;
   events.push({ t: 'voteResult', tally, votes: { ...v.votes } });
@@ -510,6 +522,7 @@ function resolveVote(s: GameState, now: number, events: GameEvent[]) {
   });
   if (settleEliminations(s, events)) return;
   const byIdx = Math.max(0, idx(s, v.by));
+  if (byIdx >= 0) openRushIfOneCard(s, byIdx, now, events);
   const drawAnim = most > 0 ? Math.min((most - 1) * 75 + 260 + 250, 3000) : 0;
   setTurn(s, step(s, byIdx), now, events, VOTE_REVEAL_MS + drawAnim, 'effect');
 }
@@ -683,9 +696,7 @@ function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, e
       if ((f.value === 'wild4' || f.value === 'wild2') && s.rules.challenge) {
         s.pending.wild4 = { by: s.players[playerIdx].id, illegal: wild4Illegal, revealedCard: wild4Card };
       }
-      // RULE-ASSUMPTION (luật No Mercy chính thức): còn 2 người thì Wild Đảo
-      // chiều +4 bỏ qua đối thủ -> CHÍNH người đánh chịu phạt (vẫn được chồng).
-      const victim = f.value === 'wildRev4' && activeCount(s) === 2 ? playerIdx : step(s, playerIdx);
+      const victim = step(s, playerIdx);
       if (s.rules.stack || ((f.value === 'wild4' || f.value === 'wild2') && s.rules.challenge)) {
         // cho người kế tiếp cơ hội chồng thêm (hoặc bắt lỗi); nếu họ rút thì nhận cả chuỗi
         setTurn(s, victim, now, events, PLAY_ANIM_MS);
@@ -927,7 +938,21 @@ function reduceCore(prev: GameState, action: Action, now: number): EngineResult 
 
       if (f.color !== 'wild') s.activeColor = f.color;
 
-      openRushIfOneCard(s, pi, now, events);
+      // Lá chức năng / lá yêu cầu người đánh chọn:
+      // - Wild card (trừ wildRoulette) chưa có màu hợp lệ
+      // - WildTogether (kể cả có sẵn màu vẫn phải chọn cặp bị xích)
+      // - Lá 7 đổi bài (luật sevenZero và phòng > 1 người)
+      // - Chỉ tay (pointTaken): cả bàn cùng bầu
+      // -> Khoan mở cửa sổ đếm ngược Ú Nồ để người chơi chọn xong mới đếm,
+      // tránh bị đối thủ / bot bắt Ú Nồ oan khi đang chọn màu hoặc chọn người đổi bài.
+      const isChoiceCard =
+        (isWildValue(f.value) && f.value !== 'wildRoulette' && (!action.chosenColor || !colorsFor(s, card).includes(action.chosenColor) || f.value === 'wildTogether')) ||
+        (f.value === '7' && !!s.rules.sevenZero && s.players.length > 1) ||
+        (f.value === 'pointTaken');
+
+      if (!isChoiceCard) {
+        openRushIfOneCard(s, pi, now, events);
+      }
 
       if (s.players[pi].hand.length === 0) {
         // lá cuối vẫn có hiệu lực phạt: người kế ăn đủ trước khi chốt ván.
@@ -1018,6 +1043,11 @@ function reduceCore(prev: GameState, action: Action, now: number): EngineResult 
       s.resume = null;
       events.push({ t: 'color', color: action.color });
       applyEffect(s, pi, card, now, events, illegal, matchingCard);
+      // Nếu applyEffect chuyển sang awaitChain (lá wildTogether) thì vẫn chờ chọn xích xong;
+      // còn lại người đánh đã hoàn tất lựa chọn -> mở cửa sổ Ú Nồ nếu còn đúng 1 lá.
+      if ((s.phase as Phase) !== 'awaitChain') {
+        openRushIfOneCard(s, pi, now, events);
+      }
       return { state: s, events };
     }
 
@@ -1172,6 +1202,7 @@ function reduceCore(prev: GameState, action: Action, now: number): EngineResult 
       const pi = idx(s, action.playerId);
       if (pi < 0) return reject(prev, action.playerId, 'no-player');
       if (s.players[pi].hand.length !== 1) return reject(prev, action.playerId, 'not-one-card');
+      if (s.players[pi].calledRush) return reject(prev, action.playerId, 'already-called');
       s.players[pi].calledRush = true;
       if (s.rushWindow?.playerId === action.playerId) s.rushWindow = null;
       award(s, action.playerId, ACTION_POINTS.rush);
@@ -1199,14 +1230,16 @@ function reduceCore(prev: GameState, action: Action, now: number): EngineResult 
     }
 
     case 'TIMEOUT': {
-      const pi = idx(s, action.playerId);
-      if (pi < 0 || s.turn !== pi) return reject(prev, action.playerId, 'not-your-turn');
       // PARTY — hết giờ bầu: chốt với những phiếu đã có (ai không bầu thì mất phiếu).
+      // Xử lý trước điều kiện s.turn !== pi vì cả bàn cùng bầu đồng thời.
+      // Dung sai 100ms tránh lệch timer giữa các môi trường runtime.
       if (s.phase === 'awaitVote' && s.vote) {
-        if (now < s.vote.deadline) return reject(prev, action.playerId, 'too-early');
+        if (now < s.vote.deadline - 100) return reject(prev, action.playerId, 'too-early');
         resolveVote(s, now, events);
         return { state: s, events };
       }
+      const pi = idx(s, action.playerId);
+      if (pi < 0 || s.turn !== pi) return reject(prev, action.playerId, 'not-your-turn');
       if (s.phase === 'awaitChain' && s.resume?.kind === 'chain') {
         const [a, b] = autoChainTargets(s, s.resume.playerId);
         return reduce(prev, { type: 'CHAIN', playerId: s.resume.playerId, a, b }, now);
@@ -1264,6 +1297,9 @@ function reduceCore(prev: GameState, action: Action, now: number): EngineResult 
       if (pi < 0 || ti < 0 || pi === ti || s.players[ti].eliminated) return reject(prev, action.playerId, 'bad-target');
       // Bầu kín, đổi phiếu được tới lúc chốt. Đủ phiếu của mọi người còn trong ván -> lộ ngay.
       s.vote.votes[action.playerId] = action.targetId;
+      // Luôn có event: nước đi hợp lệ mà không event nào thì server (bước phản
+      // ứng của bot) từng coi là thất bại và vứt luôn phiếu — vòng bầu treo.
+      events.push({ t: 'vote', playerId: action.playerId });
       if (s.players.every((p) => p.eliminated || s.vote!.votes[p.id])) resolveVote(s, now, events);
       return { state: s, events };
     }
@@ -1280,6 +1316,8 @@ function reduceCore(prev: GameState, action: Action, now: number): EngineResult 
       s.phase = 'awaitPlay';
       s.resume = null;
       events.push({ t: 'chain', a: action.a, b: action.b });
+      const pi = idx(s, action.playerId);
+      if (pi >= 0) openRushIfOneCard(s, pi, now, events);
       setTurn(s, step(s, idx(s, action.playerId)), now, events, CHAIN_ANIM_MS, 'effect');
       return { state: s, events };
     }
