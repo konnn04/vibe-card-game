@@ -67,8 +67,12 @@ export const NET = {
   pingIntervalMs: 5000,
   /** Ngưỡng coi người chơi mất kết nối tạm thời. */
   presenceStaleMs: 15000,
-  /** Thời gian ngắt kết nối hẳn khỏi phòng. */
-  disconnectTimeoutMs: 30_000,
+  /**
+   * Người đang cầm bài mất kết nối (socket đóng, hoặc im ping) quá chừng này
+   * thì máy đánh thay NGAY — không chờ tới lượt họ hết giờ. Đủ dài cho một lần
+   * mạng chập chờn / F5; vào lại thì lấy lại ghế.
+   */
+  disconnectTimeoutMs: 10_000,
   /**
    * Người XEM (hàng chờ) rớt mạng quá chừng này thì bị mời ra luôn — đủ cho
    * một lần tải lại trang, nhưng không để họ bị kéo vào ghế lúc xoay vòng.

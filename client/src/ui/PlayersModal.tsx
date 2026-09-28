@@ -5,6 +5,7 @@ import { Bot, Crown, UserX, X } from 'lucide-react';
 import type { GameState } from '@u-no/game-engine';
 import { playSfx } from '@/src/lib/audio';
 import { isTakenOver } from '@/src/lib/takeover';
+import { leavesNextRound, MIN_TABLE_AFTER_KICK } from '@/src/lib/rotation';
 import { useAvatarLookup, useRoom } from '@/src/state/room';
 import { Avatar } from './Avatar';
 
@@ -23,6 +24,7 @@ export function PlayersModal({ state, myId, onClose }: { state: GameState; myId:
   const online = useRoom((s) => s.mode === 'online');
   const hostId = useRoom((s) => s.hostId);
   const queue = useRoom((s) => s.queue);
+  const seats = useRoom((s) => s.seats);
   const scores = useRoom((s) => s.scores);
   const kick = useRoom((s) => s.kick);
   const avatarOf = useAvatarLookup();
@@ -39,13 +41,28 @@ export function PlayersModal({ state, myId, onClose }: { state: GameState; myId:
   const ranked = state.players.slice().sort((a, b) => b.score - a.score);
   const bench = queue.filter((q) => !state.players.some((p) => p.id === q.id));
 
-  const kickButton = (id: string, name: string) => {
+  // Ghế bị kick (kể cả bot) vẫn ngồi tới hết ván — không tính vào số người còn lại.
+  const leavingIds = new Set(seats.filter((s) => leavesNextRound(s)).map((s) => s!.id));
+  const staying = state.players.filter((p) => !leavingIds.has(p.id)).length;
+  // Bàn còn ít người quá thì khoá kick người ĐANG NGỒI (người xem vẫn kick được).
+  const tableLocked = staying <= MIN_TABLE_AFTER_KICK;
+
+  const kickButton = (id: string, name: string, seatedTarget: boolean) => {
     if (!isHost || id === myId) return null;
-    const confirming = confirmId === id;
+    if (seatedTarget && leavingIds.has(id)) {
+      return (
+        <span className="label shrink-0 rounded-[9px] px-2 py-1 text-[10px]" style={{ background: 'rgba(255,255,255,.08)', color: '#C6A6F0' }}>
+          {t('leavingNext')}
+        </span>
+      );
+    }
+    const locked = seatedTarget && tableLocked;
+    const confirming = !locked && confirmId === id;
     return (
       <button
         type="button"
-        className="label flex shrink-0 cursor-pointer items-center gap-1 rounded-[9px] px-2 py-1 text-[11px] transition-all hover:scale-105 active:scale-95"
+        disabled={locked}
+        className="label flex shrink-0 cursor-pointer items-center gap-1 rounded-[9px] px-2 py-1 text-[11px] transition-all hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
         style={confirming
           ? { background: 'linear-gradient(#E23B2E,#A5231A)', border: '1px solid #FFD34D', color: '#fff' }
           : { background: 'rgba(226,59,46,.16)', border: '1px solid rgba(226,59,46,.6)', color: '#FFB4A8' }}
@@ -55,7 +72,7 @@ export function PlayersModal({ state, myId, onClose }: { state: GameState; myId:
           setConfirmId(null);
           kick(id);
         }}
-        title={t('kick')}
+        title={locked ? t('kickMinPlayers', { n: MIN_TABLE_AFTER_KICK }) : t('kick')}
       >
         <UserX size={13} />
         {confirming ? t('kickConfirm', { name }) : t('kick')}
@@ -124,7 +141,7 @@ export function PlayersModal({ state, myId, onClose }: { state: GameState; myId:
                     {p.eliminated ? '💥' : tg('cards', { n: p.hand.length })} · {tg('total', { n: p.score })}
                   </div>
                 </div>
-                {!p.isBot || afk ? kickButton(p.id, p.name) : null}
+                {kickButton(p.id, p.name, true)}
               </div>
             );
           })}
@@ -155,7 +172,7 @@ export function PlayersModal({ state, myId, onClose }: { state: GameState; myId:
                       </div>
                       <div className="label text-[10px] leading-tight text-[#A48AC8]">{tg('total', { n: scores[q.id] ?? 0 })}</div>
                     </div>
-                    {kickButton(q.id, q.name)}
+                    {kickButton(q.id, q.name, false)}
                   </div>
                 );
               })}

@@ -23,7 +23,8 @@ import {
 } from '@u-no/game-engine';
 import {
   fillFreeSeats,
-  isAfkSeat,
+  leavesNextRound,
+  MIN_TABLE_AFTER_KICK,
   shrinkSeats,
   pickRotation,
   type CreateRoomDto,
@@ -84,7 +85,7 @@ export class RoomsService {
 
   constructor(private readonly avatarsService: AvatarsService) {
     // Start periodic sweep
-    setInterval(() => this.sweepRooms(), 15_000);
+    setInterval(() => this.sweepRooms(), 5_000);
   }
 
   // ------------------------------------------------------------- Room Queries
@@ -499,9 +500,9 @@ export class RoomsService {
       this.purgeOfflineSpectators(room, 0);
 
       // Người thật đang bị máy giữ ghế (rớt mạng / bỏ đi / để hết giờ nhiều
-      // lượt / bị kick giữa ván) -> mời khỏi phòng luôn, không xếp vào hàng chờ.
-      // Bot do chủ phòng thêm thì ở lại (isAfkSeat bỏ qua id 'bot-').
-      const afk = room.seats.filter((s): s is NetSeat => isAfkSeat(s));
+      // lượt) và mọi ghế bị kick giữa ván (kể cả bot) -> dọn khỏi phòng luôn,
+      // không xếp vào hàng chờ. Bot không bị kick thì ở lại.
+      const afk = room.seats.filter((s): s is NetSeat => leavesNextRound(s));
       for (const s of afk) this.evictPlayer(room, s.id, 'afk');
       if (afk.length) {
         this.onBroadcastPresence?.(room.code);
@@ -648,6 +649,16 @@ export class RoomsService {
   private kickPlayer(room: RoomRecord, targetId: string): void {
     const gp = room.status === 'playing' ? room.game?.players.find((p) => p.id === targetId) : undefined;
     if (gp) {
+      // Bàn chỉ còn MIN_TABLE_AFTER_KICK người (không tính ghế sắp rời) thì
+      // thôi — kick nữa là bàn còn một mình chủ phòng.
+      const staying = room.seats.filter((s) => s && !leavesNextRound(s)).length;
+      const seat = room.seats.find((s) => s?.id === targetId);
+      if (!seat || seat.leaving) return;
+      if (staying <= MIN_TABLE_AFTER_KICK) throw new Error('too-few-players');
+      seat.leaving = true;
+      // Bot: đánh nốt ván này rồi rời bàn lúc NEXT_ROUND, không có ai để báo.
+      if (isRealBot(targetId)) return;
+      // Người thật: máy đánh thay NGAY, người bị kick về menu.
       this.removePlayer(room, targetId);
       room.queue = room.queue.filter((q) => q.id !== targetId);
       delete room.tokens[targetId];
@@ -703,12 +714,19 @@ export class RoomsService {
     const gone = room.queue.filter((q) => {
       if (q.isBot) return false;
       const pres = pMap?.get(q.id);
-      return !!pres && !pres.online && now - pres.ts >= graceMs;
+      // Không có presence = đã mất dấu hẳn.
+      if (!pres) return true;
+      // Socket đã đóng quá thời gian ân hạn.
+      if (!pres.online) return now - pres.ts >= graceMs;
+      // Socket CHƯA đóng nhưng ping im quá presenceStaleMs (mạng treo, máy
+      // ngủ) — client đã hiện OFF, server cũng phải coi là off, không thì
+      // người này vẫn được xoay vào ghế ván sau.
+      return now - pres.ts > NET.presenceStaleMs;
     });
     for (const q of gone) {
-      this.removePlayer(room, q.id);
-      this.avatarsService.removePlayer(room.code, q.id);
-      pMap?.delete(q.id);
+      // evictPlayer: dọn vé/avatar/presence, và nếu socket còn sống thì báo
+      // SERVER_KICKED để client tự về menu thay vì kẹt ở màn xem.
+      this.evictPlayer(room, q.id, 'afk');
     }
     return gone.length > 0;
   }
@@ -762,10 +780,48 @@ export class RoomsService {
       const gp = room.game.players.find((p) => p.id === playerId);
       if (gp) {
         gp.connected = false;
+        this.scheduleTakeover(room.code, playerId);
       }
     }
     // Không xóa người chơi trong lobby ngay lập tức trên socket drop.
     // sweepRooms sẽ kiểm tra và xóa nếu offline quá LOBBY_DISCONNECT_GRACE_MS.
+  }
+
+  private takeoverTimers = new Map<string, NodeJS.Timeout>();
+
+  /**
+   * Socket của người đang cầm bài vừa đóng: hẹn NET.disconnectTimeoutMs rồi
+   * nếu vẫn offline thì máy đánh thay ngay — trước đây phải chờ tới lượt họ
+   * hết giờ (cả bàn ngồi nhìn đồng hồ) hoặc lượt quét 30s. Vào lại kịp thì
+   * presence đã online nên timer bỏ qua; vào lại muộn thì reclaimSeat trả ghế.
+   */
+  private scheduleTakeover(code: string, playerId: string): void {
+    const key = `${code}:${playerId}`;
+    clearTimeout(this.takeoverTimers.get(key));
+    const timer = setTimeout(() => {
+      this.takeoverTimers.delete(key);
+      const room = this.getRoom(code);
+      if (!room || room.status !== 'playing' || !room.game) return;
+      const pres = this.presence.get(room.code)?.get(playerId);
+      if (pres?.online) return;
+      if (this.takeOver(room, playerId)) {
+        room.updatedAt = Date.now();
+        this.onBroadcastRoom?.(room.code);
+        this.checkAndScheduleRoom(room);
+      }
+    }, NET.disconnectTimeoutMs + 50);
+    this.takeoverTimers.set(key, timer);
+  }
+
+  /** Máy ngồi giữ ghế cho người thật đang cầm bài. Trả về true nếu có đổi. */
+  private takeOver(room: RoomRecord, playerId: string): boolean {
+    const gp = room.game?.players.find((p) => p.id === playerId);
+    if (!gp || gp.isBot) return false;
+    gp.isBot = true;
+    gp.connected = false;
+    const seat = room.seats.find((s) => s?.id === playerId);
+    if (seat) seat.isBot = true;
+    return true;
   }
 
   // ------------------------------------------------------------- Game Timers & Bot Takeover
@@ -955,11 +1011,11 @@ export class RoomsService {
         for (const p of room.game.players) {
           if (!p.isBot) {
             const pres = pMap?.get(p.id);
-            if (pres && !pres.online && now - pres.ts > NET.disconnectTimeoutMs) {
-              p.isBot = true;
-              p.connected = false;
-              const seat = room.seats.find((s) => s?.id === p.id);
-              if (seat) seat.isBot = true;
+            // Lưới an toàn cho scheduleTakeover, và bắt thêm ca socket CHƯA đóng
+            // nhưng ping đã im quá presenceStaleMs (mạng treo, máy ngủ).
+            const offline = !!pres && !pres.online && now - pres.ts > NET.disconnectTimeoutMs;
+            const silent = !!pres && pres.online && now - pres.ts > NET.presenceStaleMs;
+            if ((offline || silent) && this.takeOver(room, p.id)) {
               this.onBroadcastRoom?.(code);
               this.checkAndScheduleRoom(room);
             }

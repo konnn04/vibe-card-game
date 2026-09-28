@@ -7,6 +7,8 @@ export interface NetSeat {
   avatarPreset: number;
   avatarUrl?: string | null;
   watchOnly?: boolean;
+  /** Bị chủ phòng kick giữa ván: vẫn ngồi (máy đánh thay) tới hết ván rồi rời bàn. */
+  leaving?: boolean;
 }
 
 export interface NetRoom {

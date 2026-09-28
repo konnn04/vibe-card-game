@@ -17,6 +17,8 @@ export interface Seat {
   avatarUrl?: string | null;
   /** Ở hàng chờ nhưng chỉ muốn xem — không bị xoay vào ghế ván sau. */
   watchOnly?: boolean;
+  /** Bị chủ phòng kick giữa ván: ngồi (máy đánh thay) tới hết ván rồi rời bàn. */
+  leaving?: boolean;
   /** số ván liên tục đã chơi — dùng để xoay vòng hàng chờ (FIFO) */
   consecutiveRounds: number;
 }
@@ -83,7 +85,7 @@ export function makeBot(): Seat {
   };
 }
 
-const toSeat = (p: { id: string; name: string; isBot: boolean; avatarPreset: number; avatarUrl?: string | null; watchOnly?: boolean } | null): Seat | null =>
+const toSeat = (p: { id: string; name: string; isBot: boolean; avatarPreset: number; avatarUrl?: string | null; watchOnly?: boolean; leaving?: boolean } | null): Seat | null =>
   p ? { ...p, consecutiveRounds: 0 } : null;
 
 /** Ở chế độ online mọi thay đổi phải qua server; helper này gọi API rồi chờ broadcast. */

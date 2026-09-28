@@ -78,10 +78,20 @@ export function fillFreeSeats<T extends { id: string; watchOnly?: boolean }>(
 export const isAfkSeat = (s: { id: string; isBot?: boolean } | null | undefined): boolean =>
   !!s && !!s.isBot && !s.id.startsWith('bot-');
 
-/** Bỏ các ghế AFK ra khỏi danh sách (để trống chỗ) — xem isAfkSeat. */
-export function withoutAfkSeats<T extends { id: string; isBot?: boolean }>(seats: (T | null)[]): (T | null)[] {
-  return seats.map((s) => (isAfkSeat(s) ? null : s));
+/**
+ * Ghế sẽ TRỐNG ở ván sau: ghế AFK, hoặc ghế bị chủ phòng kick giữa ván
+ * (`leaving` — áp cho cả bot, vì bot đang cầm bài không rút ra giữa ván được).
+ */
+export const leavesNextRound = (s: { id: string; isBot?: boolean; leaving?: boolean } | null | undefined): boolean =>
+  !!s && (!!s.leaving || isAfkSeat(s));
+
+/** Bỏ các ghế sẽ rời bàn ở ván sau (để trống chỗ) — xem leavesNextRound. */
+export function withoutLeavingSeats<T extends { id: string; isBot?: boolean; leaving?: boolean }>(seats: (T | null)[]): (T | null)[] {
+  return seats.map((s) => (leavesNextRound(s) ? null : s));
 }
+
+/** Số người ít nhất phải còn trên bàn thì chủ phòng mới được kick thêm người đang ngồi. */
+export const MIN_TABLE_AFTER_KICK = 2;
 
 /** Danh sách ghế SAU khi xoay vòng — dùng để hiện trước đội hình ván sau. */
 export function seatsAfterRotation<T extends { id: string; watchOnly?: boolean; isBot?: boolean }>(
