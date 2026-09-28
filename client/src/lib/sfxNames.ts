@@ -29,6 +29,7 @@ export const SFX_NAMES = [
   'jumpIn',        // đánh chen cướp lượt
   'flip',          // lật bàn (Ú Nồ Flip)
   'swap',          // đổi tay bài (luật 0/7)
+  'explode',       // vỡ trận: tay bài quá 36 lá, nổ tung bị loại (Hỗn loạn)
   'win',           // thắng ván
   'click',         // bấm nút / thao tác không hợp lệ
   'countdown',     // mỗi nhịp đếm ngược 5-4-3-2-1 trước khi chia bài

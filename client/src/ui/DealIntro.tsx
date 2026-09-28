@@ -50,7 +50,7 @@ export function DealIntro({ onDone }: { onDone: () => void }) {
     >
       <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="text-center">
         <div className="display text-[40px] tracking-[0.3em] text-[#FFD34D]">{code}</div>
-        <div className="label text-[14px] text-[#F6C79A]">{deckType === 'flip' ? tr('flip') : tr('classic')}</div>
+        <div className="label text-[14px] text-[#F6C79A]">{tr(deckType)}</div>
       </motion.div>
 
       <div className="flex max-w-[80vw] flex-wrap justify-center gap-2">

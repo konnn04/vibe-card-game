@@ -82,6 +82,22 @@ export function Fireworks({ seed, count = 7 }: { seed: number; count?: number })
 }
 
 /** Bảng kết quả ván đấu: nền tím, hàng #1 vàng, cộng điểm và đếm ngược chuyển ván. */
+/**
+ * Màn thấp (điện thoại xoay ngang, Discord nhúng) -> dùng cỡ gọn. Đo theo
+ * CHIỀU CAO chứ không phải `sm:` (chiều ngang): điện thoại xoay ngang rộng
+ * >640px nên `sm:` luôn chọn cỡ to nhất, đúng lúc màn thấp nhất.
+ */
+function useShortScreen(): boolean {
+  const [short, setShort] = useState(false);
+  useEffect(() => {
+    const check = () => setShort(window.innerHeight < 720);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  return short;
+}
+
 export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: () => void }) {
   const t = useTranslations('game');
   const state = useMatch((s) => s.state);
@@ -93,6 +109,7 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
   const queue = useRoom((s) => s.queue);
   const roomScores = useRoom((s) => s.scores);
   const avatarOf = useAvatarLookup();
+  const shortScreen = useShortScreen();
 
   const over = !!state && (state.phase === 'roundEnd' || state.phase === 'matchEnd');
   const totalScore = over ? state!.players.reduce((sum, p) => sum + p.score, 0) : 0;
@@ -148,7 +165,7 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
           }}
         >
           <div
-            className="display text-[6.4vmin] text-[#FFD34D]"
+            className="display text-[clamp(22px,4.4vmin,44px)] text-[#FFD34D]"
             style={{ textShadow: '0 6px 0 #6B3F0A, 0 0 40px rgba(255,180,60,.7)' }}
           >
             {champ?.id === myId ? t('youWin') : t('winner', { name: champ?.name ?? '' })}
@@ -189,8 +206,11 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
     queue,
     hostId,
     consecutive: Object.fromEntries(state.players.map((p) => [p.id, p.consecutiveRounds])),
+    maxSeats: state.rules.maxPlayers,
   });
   const hasBench = bench.length > 0;
+  // Gọn khi màn thấp HOẶC bảng dài (Hỗn loạn tới 8 người + người xem).
+  const c = shortScreen || ranked.length > 5;
 
   return (
     <motion.div
@@ -210,29 +230,29 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
       />
 
       <motion.div initial={{ y: -18, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="relative text-center">
-        <div className="label text-[11px] sm:text-[16px] tracking-[.3em] sm:tracking-[.4em] text-[#C6A6F0]">
+        <div className={`label tracking-[.3em] text-[#C6A6F0] ${c ? 'text-[10px]' : 'text-[13px]'}`}>
           {state.rules.targetScore > 0
             ? t('raceTo', { n: state.roundNo, target: state.rules.targetScore })
             : t('round', { n: state.roundNo })}
         </div>
-        <div className="display text-[22px] sm:text-[7vmin] leading-tight text-[#FFD34D]" style={{ textShadow: '0 4px 0 #6B3F0A' }}>
+        <div className={`display leading-tight text-[#FFD34D] ${c ? 'text-[20px]' : 'text-[30px]'}`} style={{ textShadow: '0 3px 0 #6B3F0A' }}>
           {matchOver ? t('matchWinner', { name: winner?.name ?? '' }) : iWon ? t('youWin') : t('winner', { name: winner?.name ?? '' })}
         </div>
       </motion.div>
 
-      <div className="scroll-y relative mt-2 sm:mt-6 flex max-h-[38vh] sm:max-h-[42vh] w-[min(94vw,680px)] flex-col gap-1.5 sm:gap-3 pr-1">
+      <div className={`scroll-y relative flex w-[min(94vw,520px)] flex-col pr-1 ${c ? 'mt-1.5 max-h-[58vh] gap-1' : 'mt-4 max-h-[50vh] gap-2'}`}>
         {ranked.map((p, i) => {
           const first = i === 0;
           return (
             <motion.div
               key={p.id}
-              className="flex flex-none items-center gap-2.5 sm:gap-4 rounded-xl sm:rounded-2xl px-3 py-1.5 sm:px-5 sm:py-3"
+              className={`flex flex-none items-center rounded-xl ${c ? 'gap-2 px-2.5 py-1' : 'gap-3 px-4 py-2'}`}
               style={
                 first
                   ? {
                       background: 'linear-gradient(100deg,rgba(255,211,77,.9),rgba(255,158,44,.85))',
                       border: '2px solid #fff',
-                      boxShadow: '0 10px 24px rgba(0,0,0,.45)',
+                      boxShadow: '0 6px 16px rgba(0,0,0,.4)',
                     }
                   : {
                       background: 'rgba(255,255,255,.07)',
@@ -244,7 +264,7 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.05 * i, type: 'spring', stiffness: 260, damping: 24 }}
             >
-              <div className="display w-6 sm:w-10 text-[18px] sm:text-[28px]" style={{ color: first ? '#2A1508' : '#C6A6F0' }}>
+              <div className={`display ${c ? 'w-5 text-[14px]' : 'w-7 text-[20px]'}`} style={{ color: first ? '#2A1508' : '#C6A6F0' }}>
                 {i + 1}
               </div>
               {(() => {
@@ -255,24 +275,24 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
                     preset={a.preset ?? i}
                     avatarUrl={a.url}
                     self={p.id === myId}
-                    size={38}
-                    className="seat__avatar !h-[38px] !w-[38px] sm:!h-[54px] sm:!w-[54px] !rounded-[9px] sm:!rounded-[11px]"
+                    size={c ? 26 : 38}
+                    className={`seat__avatar !rounded-[8px] ${c ? '!h-[26px] !w-[26px]' : '!h-[38px] !w-[38px]'}`}
                   />
                 );
               })()}
               <div className="min-w-0 flex-1">
-                <div className="display truncate text-[16px] sm:text-[26px] leading-tight" style={{ color: first ? '#2A1508' : '#F3ECFA' }}>
+                <div className={`display truncate leading-tight ${c ? 'text-[13px]' : 'text-[18px]'}`} style={{ color: first ? '#2A1508' : '#F3ECFA' }}>
                   {p.name}
                 </div>
-                <div className="label text-[10px] sm:text-[13px] leading-tight" style={{ color: first ? '#6A3A12' : '#A48AC8' }}>
+                <div className={`label leading-tight ${c ? 'text-[9px]' : 'text-[11px]'}`} style={{ color: first ? '#6A3A12' : '#A48AC8' }}>
                   {!p.seated ? t('spectating') : p.cards === 0 ? t('emptyHand') : t('handLeft', { n: p.cards })}
                 </div>
               </div>
               <div className="text-right">
-                <div className="display text-[17px] sm:text-[28px] leading-tight" style={{ color: first ? '#2A1508' : '#F3ECFA' }}>
+                <div className={`display leading-tight ${c ? 'text-[14px]' : 'text-[19px]'}`} style={{ color: first ? '#2A1508' : '#F3ECFA' }}>
                   {p.seated ? `+${p.gain}` : '—'}
                 </div>
-                <div className="label text-[10px] sm:text-[13px] leading-tight" style={{ color: first ? '#6A3A12' : '#A48AC8' }}>
+                <div className={`label leading-tight ${c ? 'text-[9px]' : 'text-[11px]'}`} style={{ color: first ? '#6A3A12' : '#A48AC8' }}>
                   {t('total', { n: p.score })}
                 </div>
               </div>
@@ -282,22 +302,22 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
       </div>
 
       {hasBench && !matchOver && (
-        <div className="relative mt-2.5 sm:mt-5 flex items-center gap-3 sm:gap-4">
-          <span className="label text-[11px] sm:text-[13px] tracking-[.2em] sm:tracking-[.28em] text-[#C6A6F0]">{t('nextLineup')}</span>
-          <div className="flex gap-2 sm:gap-3">
+        <div className={`relative flex max-w-[94vw] items-center gap-3 ${c ? 'mt-1.5' : 'mt-3'}`}>
+          <span className="label shrink-0 text-[10px] tracking-[.2em] text-[#C6A6F0]">{t('nextLineup')}</span>
+          <div className="flex gap-1.5 overflow-x-auto">
             {nextSeats.map((seat, i) => {
               const a = seat ? avatarOf(seat.id) : null;
               return (
-                <div key={seat?.id ?? `empty-${i}`} className="flex w-[60px] sm:w-[76px] flex-col items-center gap-1">
+                <div key={seat?.id ?? `empty-${i}`} className={`flex shrink-0 flex-col items-center gap-0.5 ${c ? 'w-[44px]' : 'w-[56px]'}`}>
                   <Avatar
                     name={seat?.name ?? ''}
                     preset={a?.preset ?? i}
                     avatarUrl={a?.url}
                     self={seat?.id === myId}
-                    size={32}
-                    className="seat__avatar !h-8 !w-8 sm:!h-11 sm:!w-11 !rounded-[8px] sm:!rounded-[10px]"
+                    size={c ? 22 : 30}
+                    className={`seat__avatar !rounded-[7px] ${c ? '!h-[22px] !w-[22px]' : '!h-[30px] !w-[30px]'}`}
                   />
-                  <span className="label w-full truncate text-center text-[10px] sm:text-[11px] text-[#C6A6F0]">
+                  <span className="label w-full truncate text-center text-[9px] text-[#C6A6F0]">
                     {seat?.name ?? '—'}
                   </span>
                 </div>
@@ -307,13 +327,13 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
         </div>
       )}
 
-      <div className="relative mt-3 sm:mt-8 flex gap-2.5 sm:gap-4">
-        <button className="btn !py-1 sm:!py-2 !px-3 sm:!px-5 !text-[13px] sm:!text-[16px]" onClick={onExit}>
+      <div className={`relative flex gap-2.5 ${c ? 'mt-2' : 'mt-5'}`}>
+        <button className={`btn !px-3 ${c ? '!py-1 !text-[12px]' : '!py-1.5 !text-[14px]'}`} onClick={onExit}>
           {t('backToMenu')}
         </button>
         {!matchOver && (
           <button
-            className="btn btn--gold !py-1 sm:!py-2 !px-4 sm:!px-8 !text-[14px] sm:!text-[22px]"
+            className={`btn btn--gold !px-5 ${c ? '!py-1 !text-[13px]' : '!py-1.5 !text-[17px]'}`}
             disabled={counting}
             onClick={onNext}
           >

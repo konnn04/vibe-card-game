@@ -9,9 +9,23 @@ export const DISCARD_POS = new THREE.Vector3(0.45, 0.05, 0.05);
 
 export type Zone = 'deck' | 'hand' | 'discard';
 
-/** Ghế j (0 = mình) nằm quanh bàn: j=0 dưới (gần camera), tăng theo chiều kim đồng hồ. */
+/** Bàn đông hơn ngưỡng này thì đối thủ dồn lên cung phía trên (xem seatAngle). */
+export const CROWDED_SEATS = 4;
+/** Cung trống hai bên quạt bài của mình khi bàn đông (rad, ~60°). */
+const CROWDED_GAP = Math.PI / 3;
+
+/**
+ * Ghế j (0 = mình) nằm quanh bàn: j=0 dưới (gần camera), tăng theo chiều kim đồng hồ.
+ *
+ * Tới 4 người: chia đều cả vòng như cũ. Bàn đông hơn (Hỗn loạn, tới 8 người):
+ * chia đều quanh cả vòng thì 2 ghế sát mình (±45°) nằm đè lên hai đầu quạt bài
+ * của mình (quạt rộng ~3.9 đơn vị). Nên chừa ra một cung trống quanh ghế mình,
+ * đối thủ chia đều trên phần còn lại.
+ */
 export function seatAngle(j: number, n: number): number {
-  return (j * Math.PI * 2) / Math.max(n, 1);
+  if (n <= CROWDED_SEATS || j === 0) return (j * Math.PI * 2) / Math.max(n, 1);
+  const span = Math.PI * 2 - CROWDED_GAP * 2;
+  return CROWDED_GAP + ((j - 1) * span) / (n - 2);
 }
 
 export function seatPos(j: number, n: number, radius = 2.45): THREE.Vector3 {
@@ -26,6 +40,7 @@ export function seatIndex(playerIdx: number, myIdx: number, n: number): number {
 
 const _e = new THREE.Euler();
 const _q = new THREE.Quaternion();
+const _up = new THREE.Vector3();
 
 export interface Transform { p: THREE.Vector3; q: THREE.Quaternion; s: number }
 
@@ -110,9 +125,12 @@ export function fanTransform(
       const targetWidth = Math.min(3.9, Math.max(1.2, 0.45 + count * 0.16));
       spread = targetWidth / R;
     } else {
-      const perCard = 0.11;
-      const minSpread = 0.35;
-      const maxSpread = 1.0;
+      // Bàn đông: 2 ghế kề nhau chỉ cách ~1.45 đơn vị -> quạt phải hẹp lại
+      // (≈1.1 đơn vị) để không lấn sang ghế bên cạnh.
+      const crowded = seatCount > CROWDED_SEATS;
+      const perCard = crowded ? 0.08 : 0.11;
+      const minSpread = crowded ? 0.25 : 0.35;
+      const maxSpread = crowded ? 0.7 : 1.0;
       spread = Math.min(maxSpread, Math.max(minSpread, perCard * (count - 1)));
     }
   }
@@ -178,7 +196,9 @@ export function fanTransform(
   const elevationY = layerRank * Math.min(0.010, 0.20 / rungs);
   // Bài nhiều thì thu nhỏ thêm chút nữa: quạt đã rộng hết cỡ, phần hở của mỗi
   // lá chỉ còn cách này để nới ra. Sàn 0.74 là mức vẫn đọc được chỉ số.
-  const scale = self ? Math.max(0.74, 0.96 - Math.max(0, count - 10) * 0.012) : 0.58;
+  const scale = self
+    ? Math.max(0.74, 0.96 - Math.max(0, count - 10) * 0.012)
+    : seatCount > CROWDED_SEATS ? 0.46 : 0.58;
 
   // Lá đang hover: CHỈ nhấc theo trục Y thế giới — KHÔNG động vào Z, KHÔNG
   // phóng to (phóng to khiến lá đè rộng hơn lên lá lân cận, nhìn như bị tăng
@@ -189,16 +209,35 @@ export function fanTransform(
   // rồi lá rơi xuống lại kích hoạt hover lại — chớp liên tục ("mất luôn" khi
   // hover, đúng lỗi báo, nhất là lá ở biên quạt). Kết hợp với debounce tắt
   // Lá đang hover/chạm tay: nhấc theo trục Y thế giới để người chơi thấy rõ lá bài
+  //
+  // Nhấc TRƯỢT DỌC MẶT PHẲNG của chính lá (trục +Y cục bộ), KHÔNG theo trục Y
+  // thế giới. Quạt bài của mình ngả ra sau, nên nhấc thẳng đứng thì phần dưới
+  // của lá (gần camera hơn) trồi lên ngang chỗ lá bên cạnh -> thắng depth test
+  // và CHE lá kế bên, nhìn như bị tăng z-index. Trượt trong mặt phẳng thì lá
+  // vẫn nằm đúng lớp cũ: lá bên phải vẫn đè lên nó như lúc chưa hover.
   const hoverLift = opts.isHovered ? 0.22 : 0;
+  const lift = hoverLift ? _up.set(0, hoverLift, 0).applyQuaternion(_q) : _up.set(0, 0, 0);
 
   return {
     p: new THREE.Vector3(
-      px + ox,
-      baseY + elevationY + hoverLift,
-      pz + oz + depthZ,
+      px + ox + lift.x,
+      baseY + elevationY + lift.y,
+      pz + oz + depthZ + lift.z,
     ),
     q: _q.clone(),
     s: scale,
+  };
+}
+
+/** Party — chồng phụ 3 lá con: phía sau giữa bàn, lá ngửa xếp so le sang phải để đếm được. */
+export const SIDE_PILE_POS = new THREE.Vector3(-0.2, 0.05, -0.95);
+export function sidePileTransform(i: number): Transform {
+  _e.set(-Math.PI / 2, ((i * 53) % 7 - 3) * 0.03, 0, 'YXZ');
+  const spread = Math.min(i, 12) * 0.07;
+  return {
+    p: new THREE.Vector3(SIDE_PILE_POS.x + spread, 0.04 + i * 0.01, SIDE_PILE_POS.z),
+    q: _q.setFromEuler(_e).clone(),
+    s: 0.82,
   };
 }
 

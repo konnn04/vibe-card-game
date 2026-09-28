@@ -272,6 +272,8 @@ function Shell() {
         .catch((e: Error) => setError(e.message));
       return; // chờ broadcast đổi status -> mọi client cùng vào bàn
     }
+    // Mode có số người tối thiểu (Party: 4) -> thêm bot cho đủ trước màn chia bài.
+    useRoom.getState().fillBotsToMin();
     setScreen('intro');
   }, []);
 

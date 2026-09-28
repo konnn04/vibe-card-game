@@ -318,3 +318,8 @@ option { background: #241536; }
   95%, 100% { transform: rotate(0deg); }
 }
 
+@media screen and (max-width: 640px) {
+  html, body { 
+    font-size: 0.8rem;
+  }
+}

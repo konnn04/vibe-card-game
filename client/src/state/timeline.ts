@@ -80,9 +80,34 @@ export const PENALTY_LEAD_MS = 300;
  *  - TURN_START (người KẾ TIẾP nhận hiệu ứng): turn, skip, skipAll, draw, caught
  * Ranh giới này quyết định chỗ CẮT bước — xem splitFrames().
  */
-const TURN_END_EVENTS = new Set<GameEvent['t']>(['play', 'color', 'reverse', 'flip', 'swap', 'rotate']);
+const TURN_END_EVENTS = new Set<GameEvent['t']>(['play', 'color', 'reverse', 'flip', 'swap', 'rotate', 'pileUp', 'pileUpStart', 'voteStart', 'chain', 'chainBreak', 'discardAll', 'roulette']);
 
 /** Thời lượng animation của MỘT event, tính từ chính hằng số tween ở trên. */
+/** Vỡ trận: màn nổ tung (Fx.tsx ExplodeMoment) — phải xem hết rồi mới sang lượt. */
+export const EXPLODE_MS = 1500;
+
+/*
+ * PARTY — khớp các hằng số giữ nhịp trong engine.ts (VOTE_REVEAL_MS,
+ * CHAIN_ANIM_MS, PILE_START_MS, PILE_TAKE_MS): lệch nhau là bot hành động
+ * trong lúc màn hình còn đang chiếu hiệu ứng.
+ */
+/** Mở vòng bình chọn Chỉ tay (chữ "3·2·1 CHỈ TAY!" bung ra). */
+export const VOTE_START_MS = 700;
+/** Lộ kết quả bình chọn trước khi bài phạt bay. */
+export const VOTE_REVEAL_MS = 1600;
+/** Cọng xích nối 2 người. */
+export const CHAIN_MS = 1100;
+/** Xích đứt. */
+export const CHAIN_BREAK_MS = 600;
+/** Lật lá mồi của chồng phụ 3 lá con. */
+export const PILE_START_MS = 900;
+/** Ôm cả chồng phụ về tay. */
+export const PILE_TAKE_MS = 1100;
+/** Đánh nhanh sai bị phạt. */
+export const JUMP_FAIL_MS = 800;
+/** No Mercy — chữ "COLOR ROULETTE!" trước khi người bị nhắm chọn màu. */
+export const ROULETTE_MS = 900;
+
 function eventMs(e: GameEvent, state: GameState): number {
   switch (e.t) {
     case 'deal': {
@@ -105,6 +130,18 @@ function eventMs(e: GameEvent, state: GameState): number {
     case 'color': return COLOR_MS;
     case 'reverse': return REVERSE_MS;
     case 'challenge': return e.revealedCard ? 1600 : 1200;
+    case 'eliminated': return EXPLODE_MS;
+    case 'voteStart': return VOTE_START_MS;
+    case 'voteResult': return VOTE_REVEAL_MS;
+    case 'chain': return CHAIN_MS;
+    case 'chainBreak': return CHAIN_BREAK_MS;
+    case 'pileUpStart': return PILE_START_MS;
+    case 'pileUp': return CARD_FLIGHT_MS;
+    case 'pileUpTake': return PILE_TAKE_MS;
+    case 'jumpFail': return JUMP_FAIL_MS;
+    // No Mercy
+    case 'discardAll': return CARD_FLIGHT_MS;
+    case 'roulette': return ROULETTE_MS;
     // turn/reject/rush/reshuffle/emote/roundEnd/matchEnd: không có gì để xem
     default: return 0;
   }
@@ -218,7 +255,7 @@ function isPenaltyFrame(events: GameEvent[]): boolean {
   return events.some((e) => e.t === 'skip' || e.t === 'skipAll' || (e.t === 'draw' && e.penalty));
 }
 
-const TURN_EFFECT_EVENTS = new Set<GameEvent['t']>(['skip', 'skipAll', 'draw', 'caught', 'challenge', 'flip', 'swap', 'rotate']);
+const TURN_EFFECT_EVENTS = new Set<GameEvent['t']>(['skip', 'skipAll', 'draw', 'caught', 'challenge', 'flip', 'swap', 'rotate', 'eliminated', 'voteResult', 'pileUpTake', 'jumpFail', 'chainPull']);
 
 /**
  * Giai đoạn hiện tại, suy ra từ chính các event của bước đang phát:

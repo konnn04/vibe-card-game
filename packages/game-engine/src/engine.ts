@@ -1,9 +1,11 @@
 import type {
   Action, Card, CardColor, DeckSide, DeckType, EngineResult, GameEvent, GameState, PlayerState, Rules,
 } from './types';
-import { buildDeck, LIGHT_TO_DARK } from './deck';
+import { LIGHT_TO_DARK } from './deck';
 import { mulberry32, shuffle } from './rng';
-import { DEFAULT_RULES, canJumpIn, canPlay, colorsOf, face, handScore, isWildValue, pendingKey } from './rules';
+import { DEFAULT_RULES, canJumpIn, canPlay, handScore, isWildValue, pendingKey } from './rules';
+import { face } from './palette';
+import { baseRulesFor, buildDeck, colorsFor, getMode } from './modes';
 
 const DARK_TO_LIGHT: Record<string, CardColor> = {
   pink: 'red', teal: 'yellow', orange: 'green', purple: 'blue', wild: 'wild',
@@ -20,10 +22,11 @@ export interface CreateGameOpts {
 }
 
 function emptyState(opts: CreateGameOpts): GameState {
-  const rules = { ...DEFAULT_RULES, ...opts.rules };
+  const deckType = opts.deckType ?? 'classic';
+  const rules = baseRulesFor(deckType, opts.rules, DEFAULT_RULES);
   return {
     seed: opts.seed,
-    deckType: opts.deckType ?? 'classic',
+    deckType,
     rules,
     side: 'light',
     players: opts.players.map((p, i) => ({
@@ -45,6 +48,9 @@ function emptyState(opts: CreateGameOpts): GameState {
     wildColors: {},
     playedSide: {},
     pending: null,
+    vote: null,
+    chain: null,
+    pileUp: null,
     phase: 'dealing',
     turnDeadline: 0,
     turnHoldUntil: 0,
@@ -74,6 +80,9 @@ export function startRound(prev: GameState, seed: number, now = Date.now()): Eng
     drawPile: buildDeck(prev.deckType, seed),
     discard: [],
     pending: null,
+    vote: null,
+    chain: null,
+    pileUp: null,
     resume: null,
     direction: 1,
     drawnThisTurn: false,
@@ -85,7 +94,7 @@ export function startRound(prev: GameState, seed: number, now = Date.now()): Eng
     wildColors: {}, playedSide: {}, // ván mới -> id lá đánh số lại, màu Wild ván trước không còn ý nghĩa
     roundNo: prev.roundNo + 1,
     phase: 'dealing',
-    players: prev.players.map((p) => ({ ...p, hand: [], calledRush: false })),
+    players: prev.players.map((p) => ({ ...p, hand: [], calledRush: false, eliminated: false })),
   };
   const events: GameEvent[] = [];
   // chia bài vòng tròn từng lá một (khớp animation "chia bài thật")
@@ -127,6 +136,9 @@ const clone = (s: GameState): GameState => ({
   drawPile: Array.isArray(s.drawPile) ? s.drawPile.slice() : [],
   discard: Array.isArray(s.discard) ? s.discard.slice() : [],
   pending: s.pending ? { ...s.pending } : null,
+  vote: s.vote ? { ...s.vote, votes: { ...s.vote.votes } } : null,
+  chain: s.chain ? { ...s.chain } : null,
+  pileUp: s.pileUp ? { ...s.pileUp, cards: s.pileUp.cards.slice() } : null,
   resume: s.resume ? { ...s.resume } : null,
   rushWindow: s.rushWindow ? { ...s.rushWindow } : null,
   lastScores: { ...(s.lastScores || {}) },
@@ -136,8 +148,30 @@ const clone = (s: GameState): GameState => ({
 });
 
 const idx = (s: GameState, playerId: string) => s.players.findIndex((p) => p.id === playerId);
-const step = (s: GameState, from: number, n = 1) =>
-  (((from + s.direction * n) % s.players.length) + s.players.length) % s.players.length;
+const wrap = (s: GameState, i: number) => ((i % s.players.length) + s.players.length) % s.players.length;
+/**
+ * Người thứ n tính từ `from` theo chiều đang chơi, BỎ QUA người đã bị loại (vỡ
+ * trận). n âm = đi ngược chiều. `from` có thể chính là người vừa bị loại.
+ */
+const step = (s: GameState, from: number, n = 1) => {
+  const dir = s.direction * Math.sign(n || 1);
+  let i = from;
+  for (let k = 0; k < Math.abs(n); k++) {
+    let guard = 0;
+    do { i = wrap(s, i + dir); } while (s.players[i].eliminated && guard++ < s.players.length);
+  }
+  return i;
+};
+/** Số người CÒN trong ván (chưa bị loại). */
+const activeCount = (s: GameState) => s.players.filter((p) => !p.eliminated).length;
+
+/*
+ * VỠ TRẬN — luật tuỳ chọn Rules.blowUp, ngưỡng Rules.blowUpAt (mặc định theo
+ * mode: DeckMode.eliminateOver — Hỗn loạn 30, Party 36, No Mercy 24).
+ * Tay bài vượt ngưỡng (do bị phạt/rút bài) thì bị loại ngay: bộ Hỗn loạn dày
+ * đặc lá phạt, 8 người chồng qua chồng lại thì bài dồn hết lên tay và ván không
+ * bao giờ kết thúc (mô phỏng 8 bot: ~7% số ván kẹt vĩnh viễn, tay tới 80+ lá).
+ */
 
 function ensureDraw(s: GameState, n: number, events: GameEvent[]): Card[] {
   const out: Card[] = [];
@@ -145,6 +179,13 @@ function ensureDraw(s: GameState, n: number, events: GameEvent[]): Card[] {
     if (!s.drawPile.length) {
       if (s.discard.length <= 1) break;
       const top = s.discard.pop()!;
+      // Lá quay lại bộ rút là lá "sạch": xoá màu Wild đã chọn và mặt lúc đánh.
+      // LỖI CŨ: wildColors giữ nguyên tới hết ván nên rút lại đúng lá Wild +4
+      // đó thì nó hiện sẵn màu cũ trên tay (dù đánh ra vẫn phải chọn màu).
+      for (const c of s.discard) {
+        delete s.wildColors[c.id];
+        delete s.playedSide[c.id];
+      }
       s.drawPile = shuffle(s.discard, mulberry32(s.seed ^ (s.eventSeq + 7) ^ 0xbeef));
       s.discard = [top];
       events.push({ t: 'reshuffle' });
@@ -156,7 +197,12 @@ function ensureDraw(s: GameState, n: number, events: GameEvent[]): Card[] {
   return out;
 }
 
-function give(s: GameState, playerIdx: number, n: number, penalty: boolean, events: GameEvent[], fast = false) {
+/**
+ * Rút `n` lá cho người chơi. Party — nếu người này đang bị Cọng xích, người bị
+ * xích cùng tự rút đúng số lá vừa rút (`mirror=false` ở lượt nhân bản để hai
+ * người không kéo nhau vô hạn).
+ */
+function give(s: GameState, playerIdx: number, n: number, penalty: boolean, events: GameEvent[], fast = false, mirror = true) {
   const cards = ensureDraw(s, n, events);
   s.players[playerIdx].hand.push(...cards);
   if (cards.length) {
@@ -167,8 +213,57 @@ function give(s: GameState, playerIdx: number, n: number, penalty: boolean, even
       s.rushWindow = null;
     }
     events.push({ t: 'draw', playerId: s.players[playerIdx].id, cardIds: cards.map((c) => c.id), penalty, fast });
+    checkEliminate(s, playerIdx, events);
+    if (mirror) pullChain(s, playerIdx, cards.length, penalty, events);
   }
   return cards;
+}
+
+/** Party — người kia trong Cọng xích rút theo `n` lá. */
+function pullChain(s: GameState, playerIdx: number, n: number, penalty: boolean, events: GameEvent[]) {
+  const ch = s.chain;
+  if (!ch || n <= 0) return;
+  const me = s.players[playerIdx].id;
+  const other = me === ch.a ? ch.b : me === ch.b ? ch.a : null;
+  if (!other) return;
+  const oi = idx(s, other);
+  if (oi < 0 || s.players[oi].eliminated) return;
+  events.push({ t: 'chainPull', from: me, to: other, n });
+  give(s, oi, n, penalty, events, true, false);
+}
+
+/**
+ * Loại người chơi nếu tay bài vượt ELIMINATE_OVER (chỉ bộ Hỗn loạn). Bài của
+ * họ xáo lại vào ĐÁY chồng rút (không ai được biết thứ tự). Trả về true nếu bị
+ * loại — caller tự lo chuyển lượt / kết ván (xem settleEliminations).
+ */
+// RULE-ASSUMPTION (No Mercy): spec để bài người bị loại "riêng, gộp vào khi
+// xáo lại". Ở đây xáo chúng vào ĐÁY chồng rút ngay: chỉ tới lượt được rút khi
+// chồng rút cũ đã cạn — cùng kết quả, nhưng không cần thêm một chồng bài nữa.
+function checkEliminate(s: GameState, playerIdx: number, events: GameEvent[]): boolean {
+  const p = s.players[playerIdx];
+  if (!s.rules.blowUp || p.eliminated || p.hand.length <= s.rules.blowUpAt) return false;
+  const cards = p.hand.length;
+  s.drawPile = [...shuffle(p.hand, mulberry32(s.seed ^ (s.eventSeq + 13) ^ 0x5eed)), ...s.drawPile];
+  p.hand = [];
+  p.eliminated = true;
+  p.calledRush = false;
+  if (s.rushWindow?.playerId === p.id) s.rushWindow = null;
+  events.push({ t: 'eliminated', playerId: p.id, cards });
+  return true;
+}
+
+/**
+ * Sau một nước có thể loại người: còn đúng 1 người thì người đó thắng ván.
+ * Trả về true nếu ván đã kết thúc (caller dừng xử lý tiếp).
+ */
+function settleEliminations(s: GameState, events: GameEvent[]): boolean {
+  if (s.phase === 'roundEnd' || s.phase === 'matchEnd') return true;
+  if (activeCount(s) > 1) return false;
+  const last = s.players.findIndex((p) => !p.eliminated);
+  s.drawRun = null;
+  endRound(s, Math.max(0, last), events);
+  return true;
 }
 
 /**
@@ -192,6 +287,7 @@ function giveUntilColor(s: GameState, playerIdx: number, color: CardColor, event
   if (drawn.length) {
     if (s.players[playerIdx].hand.length > 1) s.players[playerIdx].calledRush = false;
     events.push({ t: 'draw', playerId: s.players[playerIdx].id, cardIds: drawn.map((c) => c.id), penalty: true });
+    pullChain(s, playerIdx, drawn.length, true, events);
   }
   return drawn.length;
 }
@@ -215,6 +311,22 @@ const FLIP_ANIM_MS = 900;
 const SWAP_ANIM_MS = 1100;
 /** Bắt lỗi +4: lật ngửa tay bài kẻ bị nghi cho cả bàn xem rồi mới phạt. */
 const CHALLENGE_ANIM_MS = 1400;
+
+/**
+ * PARTY — Chỉ tay: thời gian bầu kín (tính từ lúc lá bay xong) và trần số lá
+ * phải rút theo số phiếu. Đủ phiếu sớm thì lộ kết quả ngay, không chờ hết giờ.
+ */
+export const VOTE_MS = 6000;
+export const VOTE_MAX_DRAW = 5;
+/** Màn lộ kết quả bình chọn trước khi bài phạt bay. */
+const VOTE_REVEAL_MS = 1600;
+/** Cọng xích nối 2 người. */
+const CHAIN_ANIM_MS = 1100;
+/** No Mercy — màu Roulette vừa chọn hiện lên trước khi bắt đầu lật bài. */
+const COLOR_PICK_MS = 700;
+/** Mở chồng phụ 3 lá con (lật lá mồi) / ôm cả chồng phụ về tay. */
+const PILE_START_MS = 900;
+const PILE_TAKE_MS = 1100;
 
 /**
  * Trần an toàn cho mọi khoảng "giữ nhịp" (turnHoldUntil). Chỉ là lưới chống
@@ -248,6 +360,7 @@ function setTurn(
   s.turn = next;
   s.drawnThisTurn = false;
   s.drawRun = null;
+  s.mustPlayCardId = null;
   s.turnHoldUntil = now + extraMs;
   s.turnHoldKind = extraMs > 0 ? kind : null;
   s.turnDeadline = now + extraMs + s.rules.turnSeconds * 1000;
@@ -294,6 +407,13 @@ function drawStep(s: GameState, pi: number, now: number, events: GameEvent[]): E
   const card = give(s, pi, 1, run.penalty, events, run.kind === 'fixed')[0];
   run.count++;
 
+  // Vỡ trận giữa chuỗi rút -> dừng chuỗi, lượt sang người kế (hoặc kết ván).
+  if (s.players[pi].eliminated) {
+    s.drawRun = null;
+    if (!settleEliminations(s, events)) setTurn(s, step(s, pi), now, events, DRAW_STEP_MS, 'effect');
+    return { state: s, events };
+  }
+
   let done: boolean;
   if (!card) done = true;                    // hết sạch bài cả rút lẫn discard
   else if (run.kind === 'fixed') done = (run.remaining = (run.remaining ?? 1) - 1) <= 0;
@@ -314,8 +434,11 @@ function drawStep(s: GameState, pi: number, now: number, events: GameEvent[]): E
     // Rút chủ động: rút được lá đánh được thì vẫn là lượt mình (đánh tiếp),
     // không thì mất lượt.
     s.drawnThisTurn = true;
-    if (card && canPlay(card, s)) pauseFor(s, now, DRAW_STEP_MS);
-    else setTurn(s, step(s, pi), now, events, DRAW_STEP_MS, 'effect');
+    if (card && canPlay(card, s)) {
+      // No Mercy: rút trúng lá đánh được thì BẮT BUỘC đánh đúng lá đó.
+      if (getMode(s.deckType).mustPlayDrawn && s.rules.forcePlay) s.mustPlayCardId = card.id;
+      pauseFor(s, now, DRAW_STEP_MS);
+    } else setTurn(s, step(s, pi), now, events, DRAW_STEP_MS, 'effect');
   }
   return { state: s, events };
 }
@@ -352,6 +475,67 @@ function refreshRushWindow(s: GameState, now: number, events: GameEvent[], chang
     return;
   }
   if (!s.rushWindow) s.rushWindow = { playerId: needCall.id, openedAt: now, until: now + s.rules.turnSeconds * 1000 };
+}
+
+/** Còn đúng 1 lá -> mở cửa sổ hô RUSH (tự hô hộ nếu tắt luật phạt). */
+function openRushIfOneCard(s: GameState, pi: number, now: number, events: GameEvent[]) {
+  if (s.players[pi].hand.length !== 1) return;
+  if (s.rules.rushPenalty) {
+    s.players[pi].calledRush = false;
+    s.rushWindow = { playerId: s.players[pi].id, openedAt: now, until: now + s.rules.turnSeconds * 1000 };
+  } else {
+    s.players[pi].calledRush = true;
+    events.push({ t: 'rush', playerId: s.players[pi].id });
+  }
+}
+
+/**
+ * PARTY — chốt vòng bình chọn Chỉ tay: lộ phiếu, ai nhận N phiếu rút
+ * min(N, VOTE_MAX_DRAW) lá, rồi lượt sang người kế của người đánh lá.
+ */
+function resolveVote(s: GameState, now: number, events: GameEvent[]) {
+  const v = s.vote!;
+  const tally: Record<string, number> = {};
+  for (const target of Object.values(v.votes)) if (target) tally[target] = (tally[target] ?? 0) + 1;
+  events.push({ t: 'voteResult', tally, votes: { ...v.votes } });
+  s.vote = null;
+  s.phase = 'awaitPlay';
+  let most = 0;
+  s.players.forEach((p, i) => {
+    const n = Math.min(tally[p.id] ?? 0, VOTE_MAX_DRAW);
+    if (n <= 0 || p.eliminated) return;
+    give(s, i, n, true, events, true);
+    award(s, v.by, n * ACTION_POINTS.drawPerCard);
+    most = Math.max(most, n);
+  });
+  if (settleEliminations(s, events)) return;
+  const byIdx = Math.max(0, idx(s, v.by));
+  const drawAnim = most > 0 ? Math.min((most - 1) * 75 + 260 + 250, 3000) : 0;
+  setTurn(s, step(s, byIdx), now, events, VOTE_REVEAL_MS + drawAnim, 'effect');
+}
+
+/**
+ * Hai người bị xích khi người đánh không kịp chọn (hết giờ) hoặc là bot: hai
+ * ĐỐI THỦ ít bài nhất (xích người sắp thắng lại với nhau). Bàn chỉ có 2 người
+ * thì xích đối thủ với chính mình.
+ */
+export function autoChainTargets(s: GameState, playerId: string): [string, string] {
+  const others = s.players
+    .filter((p) => p.id !== playerId && !p.eliminated)
+    .sort((a, b) => a.hand.length - b.hand.length)
+    .map((p) => p.id);
+  return [others[0] ?? playerId, others[1] ?? playerId];
+}
+
+/**
+ * Màu (trong số màu lá `card` được gọi) mà người chơi đang giữ NHIỀU NHẤT —
+ * dùng khi hết giờ phải chọn màu hộ. Hoà thì lấy màu đứng trước trong bảng màu.
+ */
+function mostHeldColor(s: GameState, playerId: string, card: Card | undefined): CardColor {
+  const palette = colorsFor(s, card);
+  const hand = s.players.find((p) => p.id === playerId)?.hand ?? [];
+  const count = (c: CardColor) => hand.filter((h) => face(h, s.side).color === c).length;
+  return palette.reduce((best, c) => (count(c) > count(best) ? c : best), palette[0]);
 }
 
 function reject(s: GameState, playerId: string, reason: string): EngineResult {
@@ -392,7 +576,13 @@ function award(s: GameState, playerId: string, points: number) {
 
 function endRound(s: GameState, winnerIdx: number, events: GameEvent[]) {
   const winner = s.players[winnerIdx];
-  const pot = s.players.reduce((sum, p, i) => (i === winnerIdx ? sum : sum + handScore(p.hand, s.side)), 0);
+  // Điểm từ bài còn lại của đối thủ + thưởng cho mỗi người bị loại (No Mercy: 250,
+  // bỏ qua bài của họ — bài đó đã trả về chồng rút lúc bị loại).
+  const bonus = getMode(s.deckType).eliminationBonus;
+  const pot = s.players.reduce(
+    (sum, p, i) => (i === winnerIdx ? sum : sum + (p.eliminated ? bonus : handScore(p.hand, s.side, s.deckType))),
+    0,
+  );
   const scores: Record<string, number> = {};
   for (const p of s.players) {
     const potShare = s.rules.teamMode ? (p.team === winner.team ? pot : 0) : p.id === winner.id ? pot : 0;
@@ -442,7 +632,7 @@ function flipSide(s: GameState, events: GameEvent[]) {
 /** Áp dụng hiệu ứng lá vừa đánh rồi chuyển lượt. */
 function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, events: GameEvent[], wild4Illegal = false, wild4Card?: Card) {
   const f = face(card, s.side);
-  const two = s.players.length === 2;
+  const two = activeCount(s) === 2;
 
   switch (f.value) {
     case 'skip':
@@ -452,7 +642,7 @@ function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, e
       return;
     case 'skipAll':
       // Dark: bỏ lượt TẤT CẢ người khác -> quay lại chính mình
-      award(s, s.players[playerIdx].id, ACTION_POINTS.skip * (s.players.length - 1));
+      award(s, s.players[playerIdx].id, ACTION_POINTS.skip * (activeCount(s) - 1));
       events.push({ t: 'skipAll' });
       setTurn(s, playerIdx, now, events, PLAY_ANIM_MS + SKIP_ANIM_MS, 'effect');
       return;
@@ -471,10 +661,20 @@ function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, e
     case 'draw2':
     case 'wild2':
     case 'wild4':
-    case 'draw5': {
+    case 'draw5':
+    case 'draw4':
+    case 'wildRev4':
+    case 'wild6':
+    case 'wild10': {
       const pk = pendingKey(f.value)! as { value: 'draw1' | 'draw2' | 'draw2f' | 'draw4' | 'draw5'; amount: number };
       const prevAmount = s.pending && s.pending.value !== 'drawColor' ? s.pending.amount : 0;
-      s.pending = { value: pk.value, amount: prevAmount + pk.amount };
+      // `last` = giá trị của CHÍNH lá này — No Mercy chỉ cho chồng lá >= nó.
+      s.pending = { value: pk.value, amount: prevAmount + pk.amount, last: pk.amount };
+      if (f.value === 'wildRev4') {
+        // Wild Đảo chiều +4: đảo chiều TRƯỚC, rồi mới phạt người kế theo chiều mới.
+        s.direction = (s.direction * -1) as 1 | -1;
+        events.push({ t: 'reverse', direction: s.direction });
+      }
       // Thưởng theo số lá CHÍNH LÁ NÀY thêm vào chuỗi, không phải tổng chuỗi —
       // chồng lên phần người trước đã gây ra thì người trước đã được tính rồi.
       award(s, s.players[playerIdx].id, pk.amount * ACTION_POINTS.drawPerCard);
@@ -483,7 +683,9 @@ function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, e
       if ((f.value === 'wild4' || f.value === 'wild2') && s.rules.challenge) {
         s.pending.wild4 = { by: s.players[playerIdx].id, illegal: wild4Illegal, revealedCard: wild4Card };
       }
-      const victim = step(s, playerIdx);
+      // RULE-ASSUMPTION (luật No Mercy chính thức): còn 2 người thì Wild Đảo
+      // chiều +4 bỏ qua đối thủ -> CHÍNH người đánh chịu phạt (vẫn được chồng).
+      const victim = f.value === 'wildRev4' && activeCount(s) === 2 ? playerIdx : step(s, playerIdx);
       if (s.rules.stack || ((f.value === 'wild4' || f.value === 'wild2') && s.rules.challenge)) {
         // cho người kế tiếp cơ hội chồng thêm (hoặc bắt lỗi); nếu họ rút thì nhận cả chuỗi
         setTurn(s, victim, now, events, PLAY_ANIM_MS);
@@ -493,6 +695,7 @@ function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, e
         events.push({ t: 'skip', playerId: s.players[victim].id });
         // Nạn nhân nhận trọn gói toàn bộ số lá phạt đã biết trước trong 1 nhịp dồn
         give(s, victim, amount, true, events, true);
+        if (settleEliminations(s, events)) return;
         const animBudget = PLAY_ANIM_MS + SKIP_ANIM_MS + Math.min((amount - 1) * 75 + 260 + 250, 3000);
         setTurn(s, step(s, victim), now, events, animBudget, 'effect');
       }
@@ -513,14 +716,67 @@ function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, e
       }
       return;
     }
+    case 'wildRoulette': {
+      // Color Roulette: NGƯỜI KẾ TIẾP chọn màu (không phải người đánh), rồi lật
+      // từng lá tới khi ra màu đó (drawRun 'color') và mất lượt. Không phải lá
+      // rút -> không tạo pending, không chồng được.
+      const victim = step(s, playerIdx);
+      s.turn = victim;
+      s.phase = 'awaitRoulette';
+      s.resume = { kind: 'roulette', cardId: card.id, playerId: s.players[victim].id };
+      events.push({ t: 'roulette', playerId: s.players[victim].id });
+      s.turnHoldUntil = now + PLAY_ANIM_MS;
+      s.turnHoldKind = 'play';
+      s.turnDeadline = now + PLAY_ANIM_MS + s.rules.turnSeconds * 1000;
+      return;
+    }
+    case 'pointTaken': {
+      // Chỉ tay phá Cọng xích đang có TRƯỚC khi phát bài phạt của vòng bầu.
+      if (s.chain) {
+        s.chain = null;
+        events.push({ t: 'chainBreak' });
+      }
+      const by = s.players[playerIdx].id;
+      const deadline = now + PLAY_ANIM_MS + VOTE_MS;
+      s.phase = 'awaitVote';
+      s.vote = { by, deadline, votes: {} };
+      s.turn = playerIdx;
+      // Lượt tạm dừng: turnDeadline = hạn bầu, để server/client gửi TIMEOUT đúng lúc chốt phiếu.
+      s.turnHoldUntil = now + PLAY_ANIM_MS;
+      s.turnHoldKind = 'play';
+      s.turnDeadline = deadline;
+      events.push({ t: 'voteStart', by, deadline });
+      return;
+    }
+    case 'wildTogether':
+      // Đã chọn màu xong -> chờ người đánh chỉ định 2 người bị xích (CHAIN).
+      s.phase = 'awaitChain';
+      s.resume = { kind: 'chain', cardId: card.id, playerId: s.players[playerIdx].id };
+      pauseFor(s, now, PLAY_ANIM_MS, 'play');
+      return;
+    case 'wildPileUp': {
+      // Mở vòng phụ: lật 1 lá từ chồng rút làm mồi cho chồng phụ màu vừa chọn.
+      const seed = ensureDraw(s, 1, events)[0];
+      s.pileUp = { color: s.activeColor, by: s.players[playerIdx].id, cards: seed ? [seed] : [] };
+      if (seed) {
+        s.playedSide[seed.id] = s.side;
+        events.push({ t: 'pileUpStart', color: s.activeColor, cardId: seed.id });
+      }
+      setTurn(s, step(s, playerIdx), now, events, PLAY_ANIM_MS + PILE_START_MS, 'effect');
+      return;
+    }
     case '0':
       if (s.rules.sevenZero) {
         // luật 0: cả bàn chuyển tay bài theo chiều đang chơi
+        // Chỉ chuyền giữa những người còn trong ván (người bị loại tay trống).
         const hands = s.players.map((p) => p.hand);
-        const rotated = s.players.map((_, i) => hands[step(s, i, -1)]);
+        const rotated = s.players.map((p, i) => (p.eliminated ? p.hand : hands[step(s, i, -1)]));
         s.players.forEach((p, i) => { p.hand = rotated[i]; });
         refreshRushWindow(s, now, events, s.players.map((_, i) => i));
         events.push({ t: 'rotate', direction: s.direction });
+        // Mercy/Vỡ trận xét cả sau khi chuyền bài (tay mới có thể đã quá ngưỡng).
+        s.players.forEach((_, i) => checkEliminate(s, i, events));
+        if (settleEliminations(s, events)) return;
         // Có animation gom bài -> trao -> xoè lại: không tính vào giờ của ai.
         setTurn(s, step(s, playerIdx), now, events, PLAY_ANIM_MS + SWAP_ANIM_MS, 'effect');
         return;
@@ -547,10 +803,28 @@ function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, e
 /* ------------------------------------------------------------------ reducer */
 
 export function reduce(prev: GameState, action: Action, now = Date.now()): EngineResult {
+  const r = reduceCore(prev, action, now);
+  const s = r.state;
+  // CHỐT CHUNG cho vỡ trận: người đang giữ lượt có thể bị loại gián tiếp (Cọng
+  // xích kéo theo khi NGƯỜI KHÁC rút bài). Vá từng đường dễ sót, nên sau mọi
+  // nước đi: lượt đang nằm ở người đã bị loại thì chuyển sang người kế tiếp.
+  if (s !== prev && s.phase === 'awaitPlay' && s.players[s.turn]?.eliminated) {
+    // Người bị loại đang gánh chuỗi phạt treo -> xoá phạt, không đẩy sang ai.
+    s.pending = null;
+    setTurn(s, step(s, s.turn), now, r.events, DRAW_STEP_MS, 'effect');
+  }
+  return r;
+}
+
+function reduceCore(prev: GameState, action: Action, now: number): EngineResult {
   const s = clone(prev);
   s.eventSeq += 1;
   const events: GameEvent[] = [];
   if (s.phase === 'dealing') s.phase = 'awaitPlay';
+
+  // Người đã vỡ trận chỉ còn được thả cảm xúc.
+  if ('playerId' in action && action.type !== 'EMOTE' && s.players.find((p) => p.id === action.playerId)?.eliminated)
+    return reject(prev, action.playerId, 'eliminated');
 
   switch (action.type) {
     case 'NEXT_ROUND': {
@@ -570,7 +844,19 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
 
       const myTurn = s.turn === pi;
       const jump = !myTurn && canJumpIn(card, s);
-      if (!myTurn && !jump) return reject(prev, action.playerId, 'not-your-turn');
+      if (!myTurn && !jump) {
+        // PARTY — Đánh nhanh SAI (lá số không giống hệt lá trên đỉnh): phạt rút,
+        // lượt vẫn của người cũ. Chỉ phạt khi bàn đang mở cho đánh nhanh (không
+        // giữa animation, vòng phụ, bình chọn, chồng phạt) để không phạt oan cú bấm lỡ.
+        const penalty = getMode(s.deckType).jumpInPenalty;
+        const openForJump = s.rules.jumpIn && !s.pending && !s.pileUp && !s.vote && now >= s.turnHoldUntil;
+        if (penalty > 0 && openForJump && /^\d$/.test(face(card, s.side).value)) {
+          give(s, pi, penalty, true, events, true);
+          events.push({ t: 'jumpFail', playerId: action.playerId, amount: penalty });
+          return { state: s, events };
+        }
+        return reject(prev, action.playerId, 'not-your-turn');
+      }
       if (myTurn && !canPlay(card, s)) return reject(prev, action.playerId, 'illegal-card');
 
       // jump-in: cướp lượt về người đánh chen
@@ -584,6 +870,23 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
         s.rushWindow = null;
       }
 
+      // PARTY — vòng 3 lá con: lá đúng màu vào CHỒNG PHỤ, không có hiệu ứng gì,
+      // lượt sang người kế để tiếp tục nối đuôi.
+      if (s.pileUp) {
+        s.players[pi].hand.splice(ci, 1);
+        s.pileUp.cards.push(card);
+        s.playedSide[card.id] = s.side;
+        events.push({ t: 'pileUp', playerId: action.playerId, cardId: card.id, count: s.pileUp.cards.length });
+        award(s, action.playerId, ACTION_POINTS.play);
+        openRushIfOneCard(s, pi, now, events);
+        if (s.players[pi].hand.length === 0) {
+          endRound(s, pi, events);
+          return { state: s, events };
+        }
+        setTurn(s, step(s, pi), now, events, PLAY_ANIM_MS);
+        return { state: s, events };
+      }
+
       s.players[pi].hand.splice(ci, 1);
       s.discard.push(card);
       // Ghi lại mặt HIỆN TẠI (trước khi lá 'flip' này tự đổi s.side ở applyEffect
@@ -594,33 +897,46 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
 
       const f = face(card, s.side);
 
+      // RULE-ASSUMPTION: các lá bỏ kèm KHÔNG kích hoạt hiệu ứng (kể cả +2, Cấm lượt).
+      // No Mercy — BỎ HẾT: mọi lá CÙNG MÀU còn trên tay theo xuống cùng lúc, không
+      // kích hoạt hiệu ứng. Xếp chúng DƯỚI lá Discard All để lá này vẫn nằm trên
+      // đỉnh (màu hiện hành = màu của nó). Hết bài thì thắng như thường.
+      if (f.value === 'discardAll') {
+        const same = s.players[pi].hand.filter((c) => face(c, s.side).color === f.color);
+        if (same.length) {
+          s.players[pi].hand = s.players[pi].hand.filter((c) => face(c, s.side).color !== f.color);
+          s.discard.splice(s.discard.length - 1, 0, ...same);
+          for (const c of same) s.playedSide[c.id] = s.side;
+          events.push({ t: 'discardAll', playerId: action.playerId, cardIds: same.map((c) => c.id) });
+          award(s, action.playerId, same.length * ACTION_POINTS.play);
+        }
+      }
+
       // BẮT LỖI WILD +N: luật chuẩn chỉ cho đánh Wild Draw khi trên tay KHÔNG
       // còn lá nào đúng màu đang hiệu lực. Phải chốt NGAY ĐÂY vì đây là thời
       // điểm duy nhất còn đủ dữ kiện: lá vừa bị splice khỏi tay, và `activeColor`
       // vẫn là màu CŨ (lá wild chưa đổi màu — việc đó xảy ra ở CHOOSE_COLOR).
+      // Đang CHỒNG PHẠT (pending) thì lá đúng màu không đánh được (canPlay chặn),
+      // Wild +N là nước hợp lệ duy nhất -> không bao giờ tính là sai luật.
+      // LỖI CŨ: chồng +4 lên +2 đỏ mà trên tay còn lá đỏ là bị bắt lỗi oan.
       const isWildDraw = f.value === 'wild4' || f.value === 'wild2';
-      const matchingCard = isWildDraw
+      const matchingCard = isWildDraw && !s.pending
         ? s.players[pi].hand.find((c) => face(c, s.side).color === s.activeColor)
         : undefined;
       const wild4Illegal = isWildDraw && !!matchingCard;
 
       if (f.color !== 'wild') s.activeColor = f.color;
 
-      // còn 1 lá -> mở cửa sổ hô RUSH (auto nếu tắt luật phạt)
-      if (s.players[pi].hand.length === 1) {
-        if (s.rules.rushPenalty) {
-          s.players[pi].calledRush = false;
-          s.rushWindow = { playerId: s.players[pi].id, openedAt: now, until: now + s.rules.turnSeconds * 1000 };
-        } else {
-          s.players[pi].calledRush = true;
-          events.push({ t: 'rush', playerId: s.players[pi].id });
-        }
-      }
+      openRushIfOneCard(s, pi, now, events);
 
       if (s.players[pi].hand.length === 0) {
-        // lá cuối vẫn có hiệu lực phạt: người kế ăn đủ trước khi chốt ván
+        // lá cuối vẫn có hiệu lực phạt: người kế ăn đủ trước khi chốt ván.
+        // RULE-ASSUMPTION (No Mercy): spec chỉ nói 0/7 lá cuối thì thắng không
+        // đổi bài; lá rút là lá cuối thì vẫn phạt người kế như mọi mode khác
+        // (phạt đó có thể làm họ bị loại vì Mercy — không đổi người thắng).
         if (isWildValue(f.value)) {
-          s.activeColor = action.chosenColor ?? colorsOf(s.side)[0];
+          const palette = colorsFor(s, card);
+          s.activeColor = action.chosenColor && palette.includes(action.chosenColor) ? action.chosenColor : palette[0];
           s.wildColors[card.id] = s.activeColor;
         }
         if (f.value === 'wildColor') {
@@ -640,8 +956,14 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
         return { state: s, events };
       }
 
+      // Color Roulette là Wild nhưng người ĐÁNH không chọn màu — người bị nhắm chọn.
+      if (f.value === 'wildRoulette') {
+        applyEffect(s, pi, card, now, events);
+        return { state: s, events };
+      }
+
       if (isWildValue(f.value)) {
-        if (action.chosenColor && colorsOf(s.side).includes(action.chosenColor)) {
+        if (action.chosenColor && colorsFor(s, card).includes(action.chosenColor)) {
           s.activeColor = action.chosenColor;
           s.wildColors[card.id] = action.chosenColor;
           events.push({ t: 'color', color: action.chosenColor });
@@ -665,11 +987,27 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
     }
 
     case 'CHOOSE_COLOR': {
+      // No Mercy — Color Roulette: NGƯỜI BỊ NHẮM chọn màu, rồi lật từng lá công
+      // khai tới khi ra màu đó (Wild lật ra không tính), nhận hết và mất lượt.
+      if (s.phase === 'awaitRoulette' && s.resume?.kind === 'roulette' && s.resume.playerId === action.playerId) {
+        const vi = idx(s, action.playerId);
+        const card = s.discard[s.discard.length - 1];
+        if (!colorsFor(s, card).includes(action.color)) return reject(prev, action.playerId, 'bad-color');
+        s.activeColor = action.color;
+        s.wildColors[card.id] = action.color;
+        s.phase = 'awaitPlay';
+        s.resume = null;
+        events.push({ t: 'color', color: action.color });
+        setTurn(s, vi, now, events, COLOR_PICK_MS, 'effect');
+        // Lật từng lá (mỗi lá một event 'draw', không dồn nhanh) — chuỗi tự chạy.
+        s.drawRun = { kind: 'color', color: action.color, count: 0, penalty: true, endsTurn: true };
+        return { state: s, events };
+      }
       if (s.phase !== 'awaitColor' || !s.resume || s.resume.playerId !== action.playerId)
         return reject(prev, action.playerId, 'phase');
-      if (!colorsOf(s.side).includes(action.color)) return reject(prev, action.playerId, 'bad-color');
       const pi = idx(s, action.playerId);
       const card = s.discard[s.discard.length - 1];
+      if (!colorsFor(s, card).includes(action.color)) return reject(prev, action.playerId, 'bad-color');
       // Đọc TRƯỚC khi xoá resume — cờ "đánh +N sai luật" được chốt từ lúc đánh
       // và gửi kèm qua đây (lúc này activeColor đã bị đổi, không tính lại được).
       const illegal = !!s.resume.wild4Illegal;
@@ -688,7 +1026,10 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
         return reject(prev, action.playerId, 'phase');
       const pi = idx(s, action.playerId);
       const ti = idx(s, action.targetId);
-      if (ti < 0 || ti === pi) return reject(prev, action.playerId, 'bad-target');
+      // Không đổi bài với người đã bị loại (vỡ trận/Mercy): họ tay trống, đổi
+      // xong người đánh mất sạch bài còn người "đã chết" lại cầm bài mà không
+      // bao giờ tới lượt — ván hỏng.
+      if (ti < 0 || ti === pi || s.players[ti].eliminated) return reject(prev, action.playerId, 'bad-target');
       const tmp = s.players[pi].hand;
       s.players[pi].hand = s.players[ti].hand;
       s.players[ti].hand = tmp;
@@ -696,6 +1037,10 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       events.push({ t: 'swap', a: action.playerId, b: action.targetId });
       s.phase = 'awaitPlay';
       s.resume = null;
+      // Mercy/Vỡ trận xét cả sau khi đổi bài.
+      checkEliminate(s, pi, events);
+      checkEliminate(s, ti, events);
+      if (settleEliminations(s, events)) return { state: s, events };
       // Luật 7: animation gom bài -> trao cho nhau -> xoè lại, không tính giờ.
       setTurn(s, step(s, pi), now, events, SWAP_ANIM_MS, 'effect');
       return { state: s, events };
@@ -715,6 +1060,23 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       // Đang rút dở -> action này chỉ lấy THÊM 1 LÁ nữa.
       if (s.drawRun) return drawStep(s, pi, now, events);
 
+      // PARTY — vòng 3 lá con: không đánh được/không muốn đánh -> ÔM CẢ CHỒNG PHỤ.
+      // Vòng chính chạy lại từ CHÍNH người vừa ôm bài (vẫn là lượt của họ).
+      if (s.pileUp) {
+        const taken = s.pileUp.cards;
+        s.pileUp = null;
+        const me = s.players[pi];
+        me.hand.push(...taken);
+        if (me.hand.length > 1) me.calledRush = false;
+        if (s.rushWindow?.playerId === me.id && me.hand.length !== 1) s.rushWindow = null;
+        events.push({ t: 'pileUpTake', playerId: me.id, cardIds: taken.map((c) => c.id) });
+        checkEliminate(s, pi, events);
+        pullChain(s, pi, taken.length, true, events);
+        if (settleEliminations(s, events)) return { state: s, events };
+        setTurn(s, me.eliminated ? step(s, pi) : pi, now, events, PILE_TAKE_MS, 'effect');
+        return { state: s, events };
+      }
+
       if (s.pending) {
         const p = s.pending;
         s.pending = null;
@@ -724,6 +1086,7 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
         }
         // Chuỗi phạt đã biết trước số lượng (+2, +4, stack): rút dồn nhanh 1 nhịp
         give(s, pi, p.amount, true, events, true);
+        if (settleEliminations(s, events)) return { state: s, events };
         const animBudget = Math.min((p.amount - 1) * 75 + 260 + 250, 3000);
         setTurn(s, step(s, pi), now, events, animBudget, 'effect');
         return { state: s, events };
@@ -738,7 +1101,8 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       // Rút thường: đúng 1 lá, không cần chuỗi.
       const c = give(s, pi, 1, false, events)[0];
       s.drawnThisTurn = true;
-      if (!c || !canPlay(c, s)) setTurn(s, step(s, pi), now, events, DRAW_STEP_MS, 'effect');
+      if (settleEliminations(s, events)) return { state: s, events };
+      if (!c || s.players[pi].eliminated || !canPlay(c, s)) setTurn(s, step(s, pi), now, events, DRAW_STEP_MS, 'effect');
       else pauseFor(s, now, DRAW_STEP_MS); // vẫn lượt mình -> giữ nguyên thời gian còn lại, chỉ dời ra
       return { state: s, events };
     }
@@ -791,11 +1155,13 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       if (success) {
         award(s, action.playerId, ACTION_POINTS.challenge);
         give(s, ti, amount, true, events, true);
+        if (settleEliminations(s, events)) return { state: s, events };
         // Người bắt đúng vẫn đang ở lượt mình -> cấp lại lượt cho CHÍNH HỌ.
         const animBudget = challengeAnim + Math.min((amount - 1) * 75 + 260 + 250, 3000);
         setTurn(s, pi, now, events, animBudget, 'effect');
       } else {
         give(s, pi, amount + 2, true, events, true);
+        if (settleEliminations(s, events)) return { state: s, events };
         const animBudget = challengeAnim + Math.min((amount + 1) * 75 + 260 + 250, 3000);
         setTurn(s, step(s, pi), now, events, animBudget, 'effect');
       }
@@ -826,6 +1192,7 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       if (s.players[ti].hand.length !== 1) return reject(prev, action.playerId, 'nothing-to-catch');
       give(s, ti, 2, true, events, true);
       s.rushWindow = null;
+      if (settleEliminations(s, events)) return { state: s, events };
       award(s, action.playerId, ACTION_POINTS.catch);
       events.push({ t: 'caught', playerId: action.targetId, amount: 2 });
       return { state: s, events };
@@ -834,14 +1201,28 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
     case 'TIMEOUT': {
       const pi = idx(s, action.playerId);
       if (pi < 0 || s.turn !== pi) return reject(prev, action.playerId, 'not-your-turn');
+      // PARTY — hết giờ bầu: chốt với những phiếu đã có (ai không bầu thì mất phiếu).
+      if (s.phase === 'awaitVote' && s.vote) {
+        if (now < s.vote.deadline) return reject(prev, action.playerId, 'too-early');
+        resolveVote(s, now, events);
+        return { state: s, events };
+      }
+      if (s.phase === 'awaitChain' && s.resume?.kind === 'chain') {
+        const [a, b] = autoChainTargets(s, s.resume.playerId);
+        return reduce(prev, { type: 'CHAIN', playerId: s.resume.playerId, a, b }, now);
+      }
+      // Vòng 3 lá con hết giờ = không đánh -> ôm chồng phụ.
+      if (s.pileUp) return reduce(prev, { type: 'DRAW', playerId: action.playerId }, now);
       // Đang rút dở mà hết giờ -> KHÔNG kết lượt (sẽ bỏ sót số lá phải rút),
       // chỉ tiến thêm 1 bước của chuỗi; pauseFor tự dời deadline nên vòng sau
       // lại có thời gian cho lá kế tiếp, tới khi chuỗi kết thúc.
       if (s.drawRun) return drawStep(s, pi, now, events);
-      if (s.phase === 'awaitColor')
-        return reduce(prev, { type: 'CHOOSE_COLOR', playerId: action.playerId, color: colorsOf(s.side)[0] }, now);
+      // Hết giờ chọn màu (Wild, hoặc bị Color Roulette): tự chọn màu mình giữ nhiều nhất.
+      // RULE-ASSUMPTION: spec chỉ nói về Wild; bị Roulette hết giờ cũng dùng cùng cách.
+      if (s.phase === 'awaitColor' || s.phase === 'awaitRoulette')
+        return reduce(prev, { type: 'CHOOSE_COLOR', playerId: action.playerId, color: mostHeldColor(s, action.playerId, s.discard[s.discard.length - 1]) }, now);
       if (s.phase === 'awaitSwapTarget') {
-        const target = s.players.find((p) => p.id !== action.playerId)!;
+        const target = s.players.find((p) => p.id !== action.playerId && !p.eliminated)!;
         return reduce(prev, { type: 'SWAP_TARGET', playerId: action.playerId, targetId: target.id }, now);
       }
       // Hết giờ mà đang bị luật "bắt buộc đánh" chặn bỏ lượt -> TỰ ĐÁNH 1 lá
@@ -850,13 +1231,20 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       const autoPlay = (st: GameState): EngineResult | null => {
         if (!st.rules.forcePlay) return null;
         const me = st.players[idx(st, action.playerId)];
-        const card = me?.hand.find((c) => canPlay(c, st));
+        const playable = me?.hand.filter((c) => canPlay(c, st)) ?? [];
+        // Ưu tiên lá thường, rồi Wild, Wild +N để cuối — tự đánh hộ mà chọn
+        // Wild +N trong khi còn lá đúng màu là tự dâng lỗi cho người ta bắt.
+        const rank = (c: Card) => {
+          const v = face(c, st.side).value;
+          return v === 'wild4' || v === 'wild2' || v === 'wildColor' ? 2 : isWildValue(v) ? 1 : 0;
+        };
+        const card = playable.sort((a, b) => rank(a) - rank(b))[0];
         if (!card) return null;
         return reduce(st, {
           type: 'PLAY',
           playerId: action.playerId,
           cardId: card.id,
-          chosenColor: colorsOf(st.side)[0],
+          chosenColor: mostHeldColor(st, action.playerId, card),
         }, now);
       };
 
@@ -867,6 +1255,33 @@ export function reduce(prev: GameState, action: Action, now = Date.now()): Engin
       if (r.state.phase === 'awaitPlay' && r.state.turn === idx(r.state, action.playerId))
         return autoPlay(r.state) ?? reduce(r.state, { type: 'PASS', playerId: action.playerId }, now);
       return r;
+    }
+
+    case 'VOTE': {
+      if (s.phase !== 'awaitVote' || !s.vote) return reject(prev, action.playerId, 'phase');
+      const pi = idx(s, action.playerId);
+      const ti = idx(s, action.targetId);
+      if (pi < 0 || ti < 0 || pi === ti || s.players[ti].eliminated) return reject(prev, action.playerId, 'bad-target');
+      // Bầu kín, đổi phiếu được tới lúc chốt. Đủ phiếu của mọi người còn trong ván -> lộ ngay.
+      s.vote.votes[action.playerId] = action.targetId;
+      if (s.players.every((p) => p.eliminated || s.vote!.votes[p.id])) resolveVote(s, now, events);
+      return { state: s, events };
+    }
+
+    case 'CHAIN': {
+      if (s.phase !== 'awaitChain' || !s.resume || s.resume.kind !== 'chain' || s.resume.playerId !== action.playerId)
+        return reject(prev, action.playerId, 'phase');
+      const ai = idx(s, action.a);
+      const bi = idx(s, action.b);
+      if (ai < 0 || bi < 0 || ai === bi || s.players[ai].eliminated || s.players[bi].eliminated)
+        return reject(prev, action.playerId, 'bad-target');
+      // Xích mới thay xích cũ (mỗi lúc chỉ một cặp bị xích).
+      s.chain = { a: action.a, b: action.b };
+      s.phase = 'awaitPlay';
+      s.resume = null;
+      events.push({ t: 'chain', a: action.a, b: action.b });
+      setTurn(s, step(s, idx(s, action.playerId)), now, events, CHAIN_ANIM_MS, 'effect');
+      return { state: s, events };
     }
 
     case 'EMOTE': {
@@ -916,6 +1331,8 @@ export function publicView(s: GameState): GameState {
   return {
     ...s,
     seed: 0,
+    // Bầu kín: chỉ lộ AI đã bầu, không lộ bầu AI (kết quả nằm trong event voteResult).
+    vote: s.vote ? { ...s.vote, votes: Object.fromEntries(Object.keys(s.vote.votes).map((k) => [k, ''])) } : null,
     // Chồng bài rút: che hết, TRỪ mặt còn lại của lá TRÊN CÙNG ở bộ Flip.
     //
     // Ngoài đời lá Flip có hai mặt thật, nên mặt đang ngửa lên của chồng bài

@@ -1,11 +1,11 @@
 'use client';
 import { create } from 'zustand';
-import { DEFAULT_RULES, type DeckType, type Rules } from '@u-no/game-engine';
+import { DEFAULT_RULES, MAX_SEATS, baseRulesFor, minPlayersFor, normalizeRules, rulesForNewDeck, type DeckType, type Rules } from '@u-no/game-engine';
 import { BOT_NAMES, roomCode } from '@/src/lib/names';
 import { api, loadToken, playerId, type NetRoom, type NetSeat, type PresenceMap } from './net';
 import { isBgTheme, type BgTheme } from '@/src/lib/themes';
 import { setLivePresence, useMatch } from './match';
-import { pickRotation } from '@/src/lib/rotation';
+import { pickRotation, shrinkSeats } from '@/src/lib/rotation';
 import { useSettings } from '@/src/lib/settings';
 import { useMemo } from 'react';
 
@@ -22,6 +22,9 @@ export interface Seat {
 }
 
 type Mode = 'local' | 'online';
+
+/** Luôn đủ MAX_SEATS ô; số ghế dùng được do rules.maxPlayers (theo bộ bài) quyết định. */
+const emptySeats = (): (Seat | null)[] => Array.from({ length: MAX_SEATS }, () => null);
 
 interface RoomStore {
   mode: Mode;
@@ -60,6 +63,8 @@ interface RoomStore {
   toQueue(index: number): void;
   seatFromQueue(qIndex: number, seatIndex: number): void;
   addBot(): void;
+  /** Chơi cục bộ: thêm bot cho đủ số người tối thiểu của mode (Party: 4) trước khi chia bài. */
+  fillBotsToMin(): void;
   kick(id: string): void;
   transferHost(targetPlayerId: string): void;
   /** Đổi giữa "chờ tới lượt vào ghế" và "chỉ xem" — dùng được cả khi đang chơi. */
@@ -101,7 +106,7 @@ export const useRoom = create<RoomStore>((set, get) => ({
   meId: 'me',
   deckType: 'classic',
   rules: { ...DEFAULT_RULES },
-  seats: [null, null, null, null],
+  seats: emptySeats(),
   queue: [],
   bgTheme: null,
   scores: {},
@@ -110,10 +115,12 @@ export const useRoom = create<RoomStore>((set, get) => ({
 
   /** Phòng cục bộ (chơi với bot, không cần mạng). */
   createRoom(me, opts) {
-    const rules = { ...DEFAULT_RULES, ...opts?.rules };
-    const seats: (Seat | null)[] = [me, null, null, null];
-    for (let i = 0; i < (opts?.bots ?? 0) && i < 3; i++) seats[i + 1] = makeBot();
-    set({ mode: 'local', code: roomCode(), hostId: me.id, meId: me.id, rules, deckType: opts?.deckType ?? 'classic', seats, queue: [] });
+    const deckType = opts?.deckType ?? 'classic';
+    const rules = baseRulesFor(deckType, opts?.rules, DEFAULT_RULES);
+    const seats = emptySeats();
+    seats[0] = me;
+    for (let i = 0; i < (opts?.bots ?? 0) && i < rules.maxPlayers - 1; i++) seats[i + 1] = makeBot();
+    set({ mode: 'local', code: roomCode(), hostId: me.id, meId: me.id, rules, deckType, seats, queue: [] });
   },
 
   /** Quick match cục bộ: luật random, 3 bot. */
@@ -126,7 +133,7 @@ export const useRoom = create<RoomStore>((set, get) => ({
     };
     set({
       mode: 'local', code: roomCode(), hostId: me.id, meId: me.id, rules, deckType: 'classic',
-      seats: [me, makeBot(), makeBot(), makeBot()], queue: [],
+      seats: [me, makeBot(), makeBot(), makeBot(), ...emptySeats().slice(4)], queue: [],
     });
   },
 
@@ -151,7 +158,7 @@ export const useRoom = create<RoomStore>((set, get) => ({
       Array.isArray(seatsRaw)
         ? (seatsRaw[i] ?? null)
         : (seatsRaw && typeof seatsRaw === 'object' ? ((seatsRaw as Record<number, NetSeat>)[i] ?? null) : null);
-    const seats = [0, 1, 2, 3].map((i) => toSeat(seatAt(i)));
+    const seats = emptySeats().map((_, i) => toSeat(seatAt(i)));
     const rawQueue = Array.isArray(room.queue) ? room.queue : [];
     const queue = rawQueue.map((q) => toSeat(q)).filter((s): s is Seat => !!s);
 
@@ -169,12 +176,17 @@ export const useRoom = create<RoomStore>((set, get) => ({
 
   setRules(patch) {
     if (get().mode === 'online') return remote(get, (c, i, t) => api.rules(c, i, t, { rules: patch }));
-    set({ rules: { ...get().rules, ...patch } });
+    const rules = normalizeRules(get().deckType, { ...get().rules, ...patch });
+    // Giảm số người chơi -> người dư NGẪU NHIÊN xuống hàng chờ (cùng luật server).
+    set({ rules, ...shrinkSeats(get().seats, get().queue, rules.maxPlayers, get().hostId) });
   },
 
   setDeck(d) {
     if (get().mode === 'online') return remote(get, (c, i, t) => api.rules(c, i, t, { deckType: d }));
-    set({ deckType: d });
+    // Đổi mode -> số người về tối đa của mode, vỡ trận bật sẵn nếu có (giống server).
+    const rules = rulesForNewDeck(d, get().rules);
+    // Bàn thu nhỏ (8 -> 4): người dư NGẪU NHIÊN xuống hàng chờ, cùng luật với server.
+    set({ deckType: d, rules, ...shrinkSeats(get().seats, get().queue, rules.maxPlayers, get().hostId) });
   },
 
   setTheme(theme) {
@@ -207,6 +219,17 @@ export const useRoom = create<RoomStore>((set, get) => ({
     seats[seatIndex] = queue[qIndex];
     queue.splice(qIndex, 1);
     set({ seats, queue });
+  },
+
+  fillBotsToMin() {
+    const seats = get().seats.slice();
+    let need = minPlayersFor(get().deckType) - seats.filter(Boolean).length;
+    for (let i = 0; i < seats.length && need > 0; i++) {
+      if (seats[i] || i >= get().rules.maxPlayers) continue;
+      seats[i] = makeBot();
+      need--;
+    }
+    set({ seats });
   },
 
   addBot() {
@@ -257,7 +280,7 @@ export const useRoom = create<RoomStore>((set, get) => ({
   reset: () =>
     set({
       mode: 'local', code: '', hostId: '', meId: 'me', bgTheme: null, scores: {}, presence: {}, avatars: {},
-      seats: [null, null, null, null], queue: [], rules: { ...DEFAULT_RULES }, deckType: 'classic',
+      seats: emptySeats(), queue: [], rules: { ...DEFAULT_RULES }, deckType: 'classic',
     }),
 }));
 

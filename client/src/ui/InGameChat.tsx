@@ -144,7 +144,7 @@ export function ChatInputBar() {
 /** Nút nhỏ kích hoạt chat cho chuột/cảm ứng */
 export function ChatTriggerButton({ size = 44 }: { size?: number } = {}) {
   const setInputOpen = useChat((s) => s.setInputOpen);
-  const iconSize = size <= 34 ? 14 : 18;
+  const iconSize = size <= 36 ? 14 : 18;
   return (
     <button
       type="button"

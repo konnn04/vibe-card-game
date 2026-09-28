@@ -69,6 +69,11 @@ export const NET = {
   presenceStaleMs: 15000,
   /** Thời gian ngắt kết nối hẳn khỏi phòng. */
   disconnectTimeoutMs: 30_000,
+  /**
+   * Người XEM (hàng chờ) rớt mạng quá chừng này thì bị mời ra luôn — đủ cho
+   * một lần tải lại trang, nhưng không để họ bị kéo vào ghế lúc xoay vòng.
+   */
+  spectatorDisconnectGraceMs: 10_000,
   /** Thời gian ân hạn giữ chỗ trong phòng chờ khi rớt mạng. */
   lobbyDisconnectGraceMs: 60_000,
   /** Thời gian dọn phòng trống không còn ai (5 phút). */

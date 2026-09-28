@@ -1,4 +1,6 @@
-import type { Card, CardColor, CardFace, CardValue, DeckSide, GameState, PendingDraw, Rules } from './types';
+import type { Card, CardValue, DeckSide, GameState, PendingDraw, Rules } from './types';
+import { face } from './palette';
+import { getMode } from './modes';
 
 export const DEFAULT_RULES: Rules = {
   sevenZero: false,
@@ -14,15 +16,15 @@ export const DEFAULT_RULES: Rules = {
   teamMode: false,
   targetScore: 0,
   randomizeSeats: true,
+  blowUp: false,
+  blowUpAt: 36,
 };
 
-/** Mặt đang hiệu lực của lá bài theo side hiện tại của bàn. */
-export function face(card: Card, side: DeckSide): CardFace {
-  return side === 'dark' && card.dark ? card.dark : card.light;
-}
-
+const WILD_VALUES = new Set<CardValue>([
+  'wild', 'wild4', 'wild2', 'wildColor', 'wildTogether', 'wildPileUp', 'wildRev4', 'wild6', 'wild10', 'wildRoulette',
+]);
 export function isWildValue(v: CardValue): boolean {
-  return v === 'wild' || v === 'wild4' || v === 'wild2' || v === 'wildColor';
+  return WILD_VALUES.has(v);
 }
 
 /**
@@ -35,6 +37,9 @@ export function drawAmountOf(v: CardValue): number {
   if (v === 'wild2') return 2;
   if (v === 'wild4') return 4;
   if (v === 'draw5') return 5;
+  if (v === 'draw4' || v === 'wildRev4') return 4;
+  if (v === 'wild6') return 6;
+  if (v === 'wild10') return 10;
   return 0;
 }
 
@@ -49,6 +54,9 @@ function pendingKey(v: CardValue): PendingDraw {
   if (v === 'wild2') return { value: 'draw2f', amount: 2 };
   if (v === 'wild4') return { value: 'draw4', amount: 4 };
   if (v === 'draw5') return { value: 'draw5', amount: 5 };
+  // No Mercy: mọi lá rút dồn chung một kiểu chuỗi; chồng được hay không xét
+  // theo `last` (DeckMode.canStackOn), không theo `value`.
+  if (v === 'draw4' || v === 'wildRev4' || v === 'wild6' || v === 'wild10') return { value: 'draw4', amount: drawAmountOf(v) };
   return null;
 }
 export { pendingKey };
@@ -60,27 +68,21 @@ export { pendingKey };
  */
 export function canPlay(
   card: Card,
-  state: Pick<GameState, 'side' | 'discard' | 'activeColor' | 'pending' | 'rules'>,
+  state: Pick<GameState, 'side' | 'discard' | 'activeColor' | 'pending' | 'rules' | 'pileUp' | 'deckType' | 'mustPlayCardId'>,
 ): boolean {
   const f = face(card, state.side);
+  // No Mercy — vừa rút trúng lá đánh được: lượt này CHỈ được đánh đúng lá đó.
+  if (state.mustPlayCardId && card.id !== state.mustPlayCardId) return false;
+  // Party — vòng 3 lá con: CHỈ lá đúng màu của chồng phụ, không lá nào khác (kể cả Wild).
+  if (state.pileUp) return f.color === state.pileUp.color;
   const top = state.discard[state.discard.length - 1];
   const topFace = top ? face(top, state.side) : null;
 
   if (state.pending) {
+    // Đang có chuỗi phạt: CHỈ lá chồng được mới hợp lệ (mỗi mode tự quy định
+    // chồng gì lên gì — DeckMode.canStackOn). Lá thường không bao giờ né được.
     if (!state.rules.stack) return false;
-    // Light: draw1 chồng draw1/wild2 (yếu -> mạnh), draw2f (đã bị wild2 đè)
-    // chỉ chồng được wild2. Classic: draw2 chồng draw2/wild4, draw4 chỉ wild4.
-    // Dark: draw5 chồng draw5/wildColor; drawColor (Wild Draw Color) chỉ
-    // chồng được đúng loại đó.
-    switch (state.pending.value) {
-      case 'draw1': return f.value === 'draw1' || f.value === 'wild2';
-      case 'draw2f': return f.value === 'wild2';
-      case 'draw2': return f.value === 'draw2' || f.value === 'wild4';
-      case 'draw4': return f.value === 'wild4';
-      case 'draw5': return f.value === 'draw5' || f.value === 'wildColor';
-      case 'drawColor': return f.value === 'wildColor';
-    }
-    return false; // luôn chặn lá thường khi có pending, không rơi xuống check bên dưới
+    return getMode(state.deckType ?? 'classic').canStackOn(f.value, state.pending);
   }
 
   if (f.color === 'wild') return true;
@@ -90,12 +92,18 @@ export function canPlay(
 }
 
 /** Jump-in: lá y hệt (cùng màu + cùng trị) lá trên cùng. */
-export function canJumpIn(card: Card, state: Pick<GameState, 'side' | 'discard' | 'pending' | 'rules'>): boolean {
-  if (!state.rules.jumpIn || state.pending) return false;
+export function canJumpIn(
+  card: Card,
+  state: Pick<GameState, 'side' | 'discard' | 'pending' | 'rules' | 'pileUp' | 'vote' | 'phase' | 'deckType'>,
+): boolean {
+  // Không đánh chen giữa vòng phụ (3 lá con), vòng bình chọn, hay khi đang chờ ai chọn gì.
+  if (!state.rules.jumpIn || state.pending || state.pileUp || state.vote || state.phase !== 'awaitPlay') return false;
   const top = state.discard[state.discard.length - 1];
   if (!top) return false;
   const a = face(card, state.side);
   const b = face(top, state.side);
+  // Party (Speed Play): chỉ LÁ SỐ giống hệt mới được đánh nhanh.
+  if (state.deckType === 'party' && !/^\d$/.test(a.value)) return false;
   return a.color !== 'wild' && a.color === b.color && a.value === b.value;
 }
 
@@ -107,20 +115,18 @@ const SCORE: Partial<Record<CardValue, number>> = {
   skip: 20, reverse: 20, draw2: 20, draw1: 20,
   wild: 50, wild4: 50, wild2: 50,
   draw5: 30, skipAll: 30, wildColor: 60, flip: 20,
+  pointTaken: 20, wildTogether: 50, wildPileUp: 50,
 };
 
-export function cardScore(card: Card, side: DeckSide): number {
+export function cardScore(card: Card, side: DeckSide, deckType: GameState['deckType'] = 'classic'): number {
   const f = face(card, side);
   if (/^\d$/.test(f.value)) return Number(f.value);
-  return SCORE[f.value] ?? 20;
+  // Mode có bảng điểm riêng (No Mercy: lá màu 20, Wild 50) thì theo mode.
+  return getMode(deckType).scoreOf(f.value) ?? SCORE[f.value] ?? 20;
 }
 
-export function handScore(cards: Card[], side: DeckSide): number {
-  return cards.reduce((s, c) => s + cardScore(c, side), 0);
-}
-
-export function colorsOf(side: DeckSide): CardColor[] {
-  return side === 'light' ? ['red', 'yellow', 'green', 'blue'] : ['pink', 'teal', 'orange', 'purple'];
+export function handScore(cards: Card[], side: DeckSide, deckType: GameState['deckType'] = 'classic'): number {
+  return cards.reduce((s, c) => s + cardScore(c, side, deckType), 0);
 }
 
 /**

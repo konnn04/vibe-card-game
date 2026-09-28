@@ -47,6 +47,7 @@ lỗi thì **riêng âm đó** rơi về bản tổng hợp, không làm hỏng 
 | `jumpIn` | đánh chen cướp lượt | `jumpIn.mp3` |
 | `flip` | lật bàn (Ú Nồ Flip) | `flip.mp3` |
 | `swap` | đổi tay bài (luật 0/7) | `swap.mp3` |
+| `explode` | vỡ trận: tay bài quá 36 lá, nổ tung bị loại (Hỗn loạn) | _(đang dùng bản tổng hợp)_ |
 | `win` | thắng ván | `win.mp3` |
 | `click` | bấm nút / thao tác không hợp lệ | `click.mp3` |
 | `countdown` | mỗi nhịp đếm ngược 5-4-3-2-1 trước khi chia bài | _(đang dùng bản tổng hợp)_ |

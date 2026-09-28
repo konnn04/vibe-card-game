@@ -1,22 +1,36 @@
 import type { Action, CardColor, GameState } from './types';
-import { canJumpIn, canPlay, colorsOf, face } from './rules';
+import { canJumpIn, canPlay } from './rules';
+import { face } from './palette';
+import { colorsFor } from './modes';
+import { autoChainTargets } from './engine';
+import type { Card } from './types';
 import { mulberry32 } from './rng';
 
 /** Heuristic ưu tiên: chồng +N > action > số cao > wild (giữ wild để cứu nước). */
 function weight(value: string): number {
-  if (value === 'draw1' || value === 'draw2' || value === 'draw5') return 100;
+  if (value === 'draw1' || value === 'draw2' || value === 'draw5' || value === 'draw4') return 100;
   if (value === 'wild4' || value === 'wild2' || value === 'wildColor') return 95;
+  // No Mercy: Wild rút nặng giữ lại để chồng phạt; Bỏ hết đánh sớm (xả nhiều lá).
+  if (value === 'wildRev4' || value === 'wild6' || value === 'wild10') return 50;
+  if (value === 'discardAll') return 92;
+  if (value === 'wildRoulette') return 88;
   if (value === 'skipAll') return 90;
   if (value === 'skip' || value === 'reverse') return 80;
   if (value === 'flip') return 70;
+  // Party: Chỉ tay dồn bài cho người khác nên đánh sớm; Cọng xích / 3 lá con là
+  // Wild -> giữ lại như Đổi màu để cứu nước.
+  if (value === 'pointTaken') return 75;
+  if (value === 'wildTogether' || value === 'wildPileUp') return 25;
   if (value === 'wild') return 20;
-  return 30 + Number(value || 0);
+  // Lá số: số cao đánh trước (bị bắt giữ lại thì mất nhiều điểm hơn). Trị lạ
+  // (lá của mode mới chưa khai ở trên) rơi về mức lá chức năng thường, không NaN.
+  return /^\d$/.test(value) ? 30 + Number(value) : 60;
 }
 
-/** Màu nên chọn cho wild: màu mình có nhiều lá nhất. */
-function bestColor(s: GameState, playerId: string): CardColor {
+/** Màu nên chọn cho lá wild `card`: màu (trong hệ của lá) mình có nhiều lá nhất. */
+function bestColor(s: GameState, playerId: string, card: Card): CardColor {
   const me = s.players.find((p) => p.id === playerId)!;
-  const palette = colorsOf(s.side);
+  const palette = colorsFor(s, card);
   const count = new Map<CardColor, number>(palette.map((c) => [c, 0]));
   for (const c of me.hand) {
     const f = face(c, s.side);
@@ -25,18 +39,41 @@ function bestColor(s: GameState, playerId: string): CardColor {
   return [...count.entries()].sort((a, b) => b[1] - a[1])[0][0];
 }
 
+/**
+ * Party — phiếu bầu Chỉ tay của bot: người KHÁC ít bài nhất (sắp thắng), trừ
+ * đồng đội nếu chơi đội. null nếu đã bầu hoặc không trong vòng bầu.
+ */
+function botVote(s: GameState, playerId: string): Action | null {
+  if (s.phase !== 'awaitVote' || !s.vote || s.vote.votes[playerId]) return null;
+  const me = s.players.find((p) => p.id === playerId);
+  if (!me || me.eliminated) return null;
+  const target = s.players
+    .filter((p) => p.id !== playerId && !p.eliminated && !(s.rules.teamMode && p.team === me.team))
+    .sort((a, b) => a.hand.length - b.hand.length)[0]
+    ?? s.players.find((p) => p.id !== playerId && !p.eliminated);
+  return target ? { type: 'VOTE', playerId, targetId: target.id } : null;
+}
+
 /** Nước đi của bot khi ĐẾN LƯỢT. Trả null nếu không làm gì được. */
 export function botAction(s: GameState, playerId: string): Action | null {
   const me = s.players.find((p) => p.id === playerId);
   if (!me) return null;
 
-  if (s.phase === 'awaitColor' && s.resume?.playerId === playerId)
-    return { type: 'CHOOSE_COLOR', playerId, color: bestColor(s, playerId) };
+  if ((s.phase === 'awaitColor' || s.phase === 'awaitRoulette') && s.resume?.playerId === playerId)
+    return { type: 'CHOOSE_COLOR', playerId, color: bestColor(s, playerId, s.discard[s.discard.length - 1]) };
+
+  if (s.phase === 'awaitVote') return botVote(s, playerId);
+
+  if (s.phase === 'awaitChain' && s.resume?.playerId === playerId) {
+    const [a, b] = autoChainTargets(s, playerId);
+    return { type: 'CHAIN', playerId, a, b };
+  }
 
   if (s.phase === 'awaitSwapTarget' && s.resume?.playerId === playerId) {
     // luật 7: đổi với người ít bài nhất (trừ đồng đội nếu chơi đội)
     const target = s.players
-      .filter((p) => p.id !== playerId && !(s.rules.teamMode && p.team === me.team))
+      // Người bị loại có 0 lá nên luôn "ít bài nhất" — phải loại ra trước khi chọn.
+      .filter((p) => p.id !== playerId && !p.eliminated && !(s.rules.teamMode && p.team === me.team))
       .sort((a, b) => a.hand.length - b.hand.length)[0];
     return target ? { type: 'SWAP_TARGET', playerId, targetId: target.id } : null;
   }
@@ -67,14 +104,17 @@ export function botAction(s: GameState, playerId: string): Action | null {
     type: 'PLAY',
     playerId,
     cardId: pick.id,
-    chosenColor: f.color === 'wild' ? bestColor(s, playerId) : undefined,
+    chosenColor: f.color === 'wild' ? bestColor(s, playerId, pick) : undefined,
   };
 }
 
 /** Bot phản ứng ngoài lượt: hô RUSH, bắt RUSH, jump-in. */
 export function botReaction(s: GameState, playerId: string): Action | null {
   const me = s.players.find((p) => p.id === playerId);
-  if (!me || s.phase !== 'awaitPlay') return null;
+  if (!me || me.eliminated) return null;
+  // Party — vòng bầu Chỉ tay: mọi bot đều bầu, không riêng người tới lượt.
+  if (s.phase === 'awaitVote') return botVote(s, playerId);
+  if (s.phase !== 'awaitPlay') return null;
   if (me.hand.length === 1 && !me.calledRush) return { type: 'CALL_RUSH', playerId };
   if (s.rushWindow && s.rushWindow.playerId !== playerId)
     return { type: 'CATCH_RUSH', playerId, targetId: s.rushWindow.playerId };

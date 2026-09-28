@@ -2,6 +2,9 @@
 import stdAtlas from '@/public/card-texture/u-no-std.json';
 import flipLightAtlas from '@/public/card-texture/u-no-flip-light.json';
 import flipDarkAtlas from '@/public/card-texture/u-no-flip-dark.json';
+import partyAtlas from '@/public/card-texture/u-no-party.json';
+import noMercy1Atlas from '@/public/card-texture/u-no-no-mercy-part-1.json';
+import noMercy2Atlas from '@/public/card-texture/u-no-no-mercy-part-2.json';
 
 /**
  * Cắt MỘT lá bài ra khỏi atlas ảnh thật, cho UI 2D (menu, hướng dẫn chơi).
@@ -14,7 +17,7 @@ import flipDarkAtlas from '@/public/card-texture/u-no-flip-dark.json';
  * đúng khi tỉ lệ khung hiển thị trùng khít tỉ lệ ô sprite — một ràng buộc ngầm
  * rất dễ vỡ khi đổi kích thước thẻ.
  */
-export type AtlasId = 'std' | 'flipLight' | 'flipDark';
+export type AtlasId = 'std' | 'flipLight' | 'flipDark' | 'party' | 'noMercy1' | 'noMercy2';
 
 interface AtlasFrame { x: number; y: number; w: number; h: number; name: string }
 
@@ -22,6 +25,9 @@ const ATLASES: Record<AtlasId, { src: string; w: number; h: number; frames: Atla
   std: { src: '/card-texture/u-no-std.jpg', w: 2048, h: 2048, frames: stdAtlas as AtlasFrame[] },
   flipLight: { src: '/card-texture/u-no-flip-light.jpg', w: 4096, h: 4096, frames: flipLightAtlas as AtlasFrame[] },
   flipDark: { src: '/card-texture/u-no-flip-dark.jpg', w: 4096, h: 4096, frames: flipDarkAtlas as AtlasFrame[] },
+  party: { src: '/card-texture/u-no-party.jpg', w: 2048, h: 2048, frames: partyAtlas as AtlasFrame[] },
+  noMercy1: { src: '/card-texture/u-no-no-mercy-part-1.jpg', w: 2048, h: 2048, frames: noMercy1Atlas as AtlasFrame[] },
+  noMercy2: { src: '/card-texture/u-no-no-mercy-part-2.jpg', w: 2048, h: 2048, frames: noMercy2Atlas as AtlasFrame[] },
 };
 
 export function hasSprite(atlas: AtlasId, name: string): boolean {

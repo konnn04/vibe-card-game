@@ -1,28 +1,44 @@
 'use client';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
-import { colorsOf, type CardColor } from '@u-no/game-engine';
+import type { CardColor } from '@u-no/game-engine';
 import { COLOR_HEX } from '@/src/three/atlas';
 import { playSfx } from '@/src/lib/audio';
 
 /**
- * Bánh xe chọn màu (mock 04): conic-gradient 4 phần + chữ thập trắng.
- * Mỗi phần là 1 button phủ 1/4 vòng, bấm đâu ăn đó.
+ * Bánh xe chọn màu (mock 04): conic-gradient N phần + đường chia trắng.
+ * Mỗi phần là 1 button cắt theo hình quạt (clip-path), bấm đâu ăn đó.
+ * N = 4, hoặc 8 cho lá Đổi màu thường của bộ Hỗn loạn (cả hai hệ màu).
  */
+
+/** Hình quạt [a0, a1] (độ, 0 = đỉnh, theo chiều kim đồng hồ) dưới dạng clip-path. */
+function wedgeClip(a0: number, a1: number): string {
+  const pts = ['50% 50%'];
+  const steps = Math.max(2, Math.ceil((a1 - a0) / 10));
+  for (let k = 0; k <= steps; k++) {
+    const a = ((a0 + ((a1 - a0) * k) / steps) * Math.PI) / 180;
+    pts.push(`${50 + Math.sin(a) * 50}% ${50 - Math.cos(a) * 50}%`);
+  }
+  return `polygon(${pts.join(',')})`;
+}
+
 export function ColorWheel({
   open,
-  side,
+  colors,
   seconds,
+  title,
   onPick,
 }: {
   open: boolean;
-  side: 'light' | 'dark';
+  colors: CardColor[];
+  /** Tiêu đề thay cho "Chọn màu" (vd No Mercy: bị Color Roulette nhắm vào). */
+  title?: string;
   seconds: number;
   onPick: (c: CardColor) => void;
 }) {
   const t = useTranslations('game');
-  const colors = colorsOf(side);
-  const conic = colors.map((c, i) => `${COLOR_HEX[c]} ${i * 90}deg ${(i + 1) * 90}deg`).join(',');
+  const step = 360 / colors.length;
+  const conic = colors.map((c, i) => `${COLOR_HEX[c]} ${i * step}deg ${(i + 1) * step}deg`).join(',');
 
   return (
     <AnimatePresence>
@@ -40,7 +56,7 @@ export function ColorWheel({
                 className="display text-[26px] sm:text-[46px] text-[#FFF3DA]"
                 style={{ textShadow: '0 4px 0 rgba(0,0,0,.4)' }}
               >
-                {t('pickColor')}
+                {title ?? t('pickColor')}
               </div>
               <div className="label mt-0.5 text-[13px] sm:text-[15px] tracking-[.24em] text-[#FFC98A]">{seconds}s</div>
             </div>
@@ -61,8 +77,14 @@ export function ColorWheel({
                   boxShadow: '0 20px 50px rgba(0,0,0,.6), 0 0 50px rgba(255,170,70,.35)',
                 }}
               />
-              <div className="pointer-events-none absolute left-1/2 top-0 h-full w-1.5 -translate-x-1/2 bg-white" />
-              <div className="pointer-events-none absolute left-0 top-1/2 h-1.5 w-full -translate-y-1/2 bg-white" />
+              {/* Đường chia trắng: mỗi đường đi qua tâm là ranh giới của 2 cặp ô đối xứng. */}
+              {Array.from({ length: colors.length / 2 }, (_, k) => (
+                <div
+                  key={`line-${k}`}
+                  className="pointer-events-none absolute left-1/2 top-0 h-full w-1.5 -translate-x-1/2 bg-white"
+                  style={{ transform: `translateX(-50%) rotate(${k * step}deg)` }}
+                />
+              ))}
 
               {colors.map((c, i) => (
                 <button
@@ -71,15 +93,9 @@ export function ColorWheel({
                     playSfx('click');
                     onPick(c);
                   }}
-                  className="display absolute h-1/2 w-1/2 text-[26px] text-white transition-transform hover:scale-105 active:scale-95"
+                  className="absolute inset-0 transition-transform hover:scale-105 active:scale-95"
                   style={{
-                    ...(i === 0
-                      ? { right: 0, top: 0 }
-                      : i === 1
-                      ? { right: 0, bottom: 0 }
-                      : i === 2
-                      ? { left: 0, bottom: 0 }
-                      : { left: 0, top: 0 }),
+                    clipPath: wedgeClip(i * step, (i + 1) * step),
                     background: 'transparent',
                     border: 0,
                     cursor: 'pointer',
@@ -91,7 +107,7 @@ export function ColorWheel({
                 className="pointer-events-none absolute left-1/2 top-1/2 grid -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full"
                 style={{ width: 'min(116px, 18vh)', height: 'min(116px, 18vh)', background: '#17141F', border: '5px solid #fff' }}
               >
-                <div className="grid grid-cols-2 gap-1">
+                <div className={`grid gap-1 ${colors.length > 4 ? 'grid-cols-4' : 'grid-cols-2'}`}>
                   {colors.map((c) => (
                     <span
                       key={`q-${c}`}

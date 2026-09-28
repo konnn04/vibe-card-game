@@ -6,6 +6,12 @@ import {
   DEFAULT_RULES,
   handOf,
   MAX_HOLD_MS,
+  MAX_SEATS,
+  isDeckType,
+  baseRulesFor,
+  minPlayersFor,
+  normalizeRules,
+  rulesForNewDeck,
   publicView,
   reduce,
   RUSH_GRACE_MS,
@@ -16,6 +22,8 @@ import {
   type Rules,
 } from '@u-no/game-engine';
 import {
+  fillFreeSeats,
+  shrinkSeats,
   pickRotation,
   type CreateRoomDto,
   type NetRoom,
@@ -33,6 +41,20 @@ import {
 } from '@u-no/shared';
 import { AvatarsService } from './avatars.service';
 import type { RoomRecord } from './rooms.types';
+
+/** Tổng người tối đa trong phòng (ngồi + hàng chờ): đủ ghế + 4 chỗ xem. */
+const roomCapacity = (room: RoomRecord): number => room.rules.maxPlayers + 4;
+
+/** Bàn thu nhỏ (8 -> 4 ghế): người dư NGẪU NHIÊN xuống hàng chờ — xem shrinkSeats(). */
+function compactSeats(room: RoomRecord): void {
+  while (room.seats.length < MAX_SEATS) room.seats.push(null);
+  const r = shrinkSeats(room.seats, room.queue, room.rules.maxPlayers, room.hostId);
+  room.seats = r.seats;
+  room.queue = r.queue;
+}
+
+/** Bot do chủ phòng thêm (id sinh ở addBot/startOp) — khác người thật bị bot ngồi thay. */
+const isRealBot = (id: string): boolean => id.startsWith('bot-');
 
 export function makeToken(): string {
   return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
@@ -109,12 +131,16 @@ export class RoomsService {
     }
     const token = makeToken();
     const initialTheme = isValidTheme(opts.bgTheme) ? opts.bgTheme! : 'cafe';
+    const deckType = isDeckType(opts.deckType) ? opts.deckType : 'classic';
+    // Luôn đủ MAX_SEATS ô; số ghế DÙNG ĐƯỢC do rules.maxPlayers (theo bộ bài) quyết định.
+    const seats: (NetSeat | null)[] = Array.from({ length: MAX_SEATS }, () => null);
+    seats[0] = host;
     const room: RoomRecord = {
       code,
       hostId: host.id,
-      deckType: opts.deckType ?? 'classic',
-      rules: { ...DEFAULT_RULES, ...opts.rules },
-      seats: [host, null, null, null],
+      deckType,
+      rules: baseRulesFor(deckType, opts.rules, DEFAULT_RULES),
+      seats,
       queue: [],
       status: 'lobby',
       game: null,
@@ -169,7 +195,7 @@ export class RoomsService {
       const isAlreadyInRoom = room.seats.some((s) => s?.id === player.id) || room.queue.some((q) => q.id === player.id);
       if (!isAlreadyInRoom) {
         const totalMembers = room.seats.filter((s) => !!s).length + room.queue.length;
-        if (totalMembers >= 8) {
+        if (totalMembers >= roomCapacity(room)) {
           throw new Error('room-full');
         }
       }
@@ -269,7 +295,8 @@ export class RoomsService {
         if (!isHost && dto.from !== undefined && room.seats[dto.from]?.id !== playerId) {
           throw new Error('not-allowed');
         }
-        if (dto.from !== undefined && dto.to !== undefined && room.status === 'lobby') {
+        if (dto.from !== undefined && dto.to !== undefined && room.status === 'lobby'
+          && dto.from < room.rules.maxPlayers && dto.to < room.rules.maxPlayers) {
           const temp = room.seats[dto.from];
           room.seats[dto.from] = room.seats[dto.to];
           room.seats[dto.to] = temp;
@@ -292,7 +319,8 @@ export class RoomsService {
       }
       case 'seatFromQueue': {
         const qIndex = dto.qIndex !== undefined ? dto.qIndex : dto.queueIndex;
-        if (qIndex !== undefined && dto.seatIndex !== undefined && room.status === 'lobby') {
+        if (qIndex !== undefined && dto.seatIndex !== undefined && room.status === 'lobby'
+          && dto.seatIndex < room.rules.maxPlayers) {
           const qPlayer = room.queue[qIndex];
           if (qPlayer) {
             if (!isHost && qPlayer.id !== playerId) throw new Error('not-allowed');
@@ -347,12 +375,18 @@ export class RoomsService {
     if (!this.verifyToken(room, playerId, token)) throw new Error('unauthorized');
     if (room.hostId !== playerId || room.status !== 'lobby') throw new Error('not-allowed');
 
-    if (patch.rules) {
-      room.rules = { ...room.rules, ...patch.rules };
-    }
-    if (patch.deckType) {
+    if (isDeckType(patch.deckType) && patch.deckType !== room.deckType) {
       room.deckType = patch.deckType;
+      // Đổi mode -> số người về tối đa của mode, vỡ trận bật sẵn nếu mode có;
+      // chủ phòng chỉnh lại sau. Mode mới nhỏ hơn thì shrinkSeats mời bớt người ra.
+      room.rules = rulesForNewDeck(room.deckType, room.rules);
     }
+    // Chuẩn hoá SAU khi áp cả 2: maxPlayers bị kẹp trong giới hạn của bộ bài,
+    // client không tự bật lại được luật mà bộ Hỗn loạn bắt buộc tắt.
+    room.rules = normalizeRules(room.deckType, { ...room.rules, ...patch.rules });
+    // Giảm số người chơi / đổi sang bộ nhỏ hơn -> người dư NGẪU NHIÊN xuống hàng chờ.
+    // Tăng thì không ai bị động tới: người chờ vào ghế trống ở ván sau.
+    compactSeats(room);
     if (isValidTheme(patch.bgTheme)) {
       room.bgTheme = patch.bgTheme!;
     }
@@ -367,23 +401,17 @@ export class RoomsService {
     if (!this.verifyToken(room, playerId, token)) throw new Error('unauthorized');
     if (room.hostId !== playerId) throw new Error('not-allowed');
 
-    // Filter seated players
-    const seated = room.seats.filter((s): s is NetSeat => !!s);
-    if (seated.length < 2) {
-      // If only host, add a bot so game can start
-      if (seated.length === 1) {
-        const botId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const botName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
-        const freeIndex = room.seats.findIndex((s, i) => !s && i < room.rules.maxPlayers);
-        if (freeIndex >= 0) {
-          room.seats[freeIndex] = {
-            id: botId,
-            name: botName,
-            isBot: true,
-            avatarPreset: Math.floor(Math.random() * 6),
-          };
-        }
-      }
+    // Thiếu người so với mức tối thiểu của mode (Party: 4, còn lại: 2) -> thêm bot cho đủ.
+    const need = minPlayersFor(room.deckType) - room.seats.filter((s) => !!s).length;
+    for (let k = 0; k < need; k++) {
+      const freeIndex = room.seats.findIndex((s, i) => !s && i < room.rules.maxPlayers);
+      if (freeIndex < 0) break;
+      room.seats[freeIndex] = {
+        id: `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)],
+        isBot: true,
+        avatarPreset: Math.floor(Math.random() * 6),
+      };
     }
 
     if (isValidTheme(bgTheme)) {
@@ -454,6 +482,24 @@ export class RoomsService {
       if (room.game.phase !== 'roundEnd') {
         return { ok: false, rejected: 'round-not-ended' };
       }
+      // Người xem đã rớt mạng thì dọn khỏi hàng chờ TRƯỚC — không thì họ được
+      // xếp vào ghế, đẩy một người thật ra ngoài rồi bị bot ngồi thay luôn.
+      this.purgeOfflineSpectators(room, 0);
+
+      // Bàn còn ghế trống (ván trước bắt đầu khi chưa đủ người) -> người trong
+      // hàng chờ vào thẳng ghế trống, KHÔNG ai phải nhường chỗ. Bàn tăng dần lên
+      // tới maxPlayers thay vì kẹt mãi ở số người lúc bắt đầu.
+      const fills = fillFreeSeats(room.seats, room.queue, room.rules.maxPlayers);
+      if (fills.length) {
+        for (const f of fills) room.seats[f.seat] = room.queue[f.queueIndex];
+        const moved = new Set(fills.map((f) => f.queueIndex));
+        room.queue = room.queue.filter((_, k) => !moved.has(k));
+        const events = this.beginMatch(room);
+        this.onBroadcastRoom?.(room.code, events);
+        this.checkAndScheduleRoom(room);
+        return { ok: true, events };
+      }
+
       // Nếu có người đang đợi trong hàng chờ (không phải watchOnly) -> xoay vòng
       const consecutive: Record<string, number> = {};
       for (const p of room.game.players) {
@@ -469,8 +515,10 @@ export class RoomsService {
         const outPlayer = room.seats[swap.seat];
         const inPlayer = room.queue.splice(swap.queueIndex, 1)[0];
         room.seats[swap.seat] = inPlayer;
-        if (outPlayer && !room.queue.some((q) => q.id === outPlayer.id)) {
-          room.queue.push(outPlayer);
+        // Bot thật (do chủ phòng thêm) thì bỏ luôn, không xếp vào hàng chờ.
+        // Người thật bị bot ngồi thay lúc rớt mạng thì về hàng chờ như người thường.
+        if (outPlayer && !isRealBot(outPlayer.id) && !room.queue.some((q) => q.id === outPlayer.id)) {
+          room.queue.push({ ...outPlayer, isBot: false });
         }
         const events = this.beginMatch(room);
         this.onBroadcastRoom?.(room.code, events);
@@ -522,13 +570,11 @@ export class RoomsService {
   }
 
   removePlayer(room: RoomRecord, playerId: string): void {
-    if (room.status === 'playing' && room.game) {
+    const gp = room.status === 'playing' ? room.game?.players.find((p) => p.id === playerId) : undefined;
+    if (gp) {
       // In-game: bot takeover instead of removing
-      const gp = room.game.players.find((p) => p.id === playerId);
-      if (gp) {
-        gp.isBot = true;
-        gp.connected = false;
-      }
+      gp.isBot = true;
+      gp.connected = false;
       const seat = room.seats.find((s) => s?.id === playerId);
       if (seat) {
         seat.isBot = true;
@@ -548,6 +594,47 @@ export class RoomsService {
     if (humanCount === 0) {
       this.clearRoomTimer(room.code);
     }
+  }
+
+  /**
+   * Dọn người xem (hàng chờ) đã offline quá `graceMs`. Người xem không có ghế
+   * nên chẳng có gì để bot giữ hộ — để lại chỉ gây hại: tới lượt xoay vòng họ
+   * bị kéo vào ghế, đẩy một người thật ra, rồi bot lại ngồi thay họ.
+   * Trả về true nếu có người bị dọn (caller tự broadcast).
+   */
+  purgeOfflineSpectators(room: RoomRecord, graceMs: number = NET.spectatorDisconnectGraceMs): boolean {
+    const pMap = this.presence.get(room.code);
+    const now = Date.now();
+    const gone = room.queue.filter((q) => {
+      if (q.isBot) return false;
+      const pres = pMap?.get(q.id);
+      return !!pres && !pres.online && now - pres.ts >= graceMs;
+    });
+    for (const q of gone) {
+      this.removePlayer(room, q.id);
+      this.avatarsService.removePlayer(room.code, q.id);
+      pMap?.delete(q.id);
+    }
+    return gone.length > 0;
+  }
+
+  private spectatorTimers = new Map<string, NodeJS.Timeout>();
+
+  private scheduleSpectatorPurge(code: string, playerId: string): void {
+    const key = `${code}:${playerId}`;
+    clearTimeout(this.spectatorTimers.get(key));
+    const timer = setTimeout(() => {
+      this.spectatorTimers.delete(key);
+      const room = this.getRoom(code);
+      if (!room) return;
+      if (this.purgeOfflineSpectators(room)) {
+        room.updatedAt = Date.now();
+        this.onBroadcastRoom?.(room.code);
+        this.onBroadcastPresence?.(room.code);
+        this.onBroadcastAvatars?.(room.code);
+      }
+    }, NET.spectatorDisconnectGraceMs + 50);
+    this.spectatorTimers.set(key, timer);
   }
 
   // ------------------------------------------------------------- Presence & Ping
@@ -571,6 +658,10 @@ export class RoomsService {
 
     this.updatePresence(code, playerId, false, null);
     this.onBroadcastPresence?.(code);
+
+    if (room.queue.some((q) => q.id === playerId)) {
+      this.scheduleSpectatorPurge(room.code, playerId);
+    }
 
     if (room.status === 'playing' && room.game) {
       const gp = room.game.players.find((p) => p.id === playerId);
@@ -623,6 +714,13 @@ export class RoomsService {
       const holdRemain = Math.min(MAX_HOLD_MS, Math.max(0, g.turnHoldUntil - Date.now()));
       const delay = Math.max(holdRemain, g.phase === 'awaitColor' || g.phase === 'awaitSwapTarget' ? 450 : 650);
       this.scheduleRoomStep(room.code, delay);
+      return;
+    }
+
+    // Party — vòng bầu Chỉ tay: bot nào chưa bầu thì bầu sớm (runRoomStep bước 3),
+    // không đợi tới hạn chốt phiếu của người thật.
+    if (g.phase === 'awaitVote' && g.vote && g.players.some((p) => p.isBot && !p.eliminated && !g.vote!.votes[p.id])) {
+      this.scheduleRoomStep(room.code, BOT.pickMs + Math.random() * 400);
       return;
     }
 
@@ -728,6 +826,14 @@ export class RoomsService {
     for (const [code, room] of this.rooms.entries()) {
       const humanCount = [...room.seats, ...room.queue].filter((p) => p && !p.isBot).length;
       const idleTime = now - room.updatedAt;
+
+      // Lưới an toàn cho timer ở handleDisconnect (vd người xem mất ping mà
+      // socket chưa kịp đóng).
+      if (this.purgeOfflineSpectators(room)) {
+        this.onBroadcastRoom?.(code);
+        this.onBroadcastPresence?.(code);
+        this.onBroadcastAvatars?.(code);
+      }
 
       // Disconnect timeout for human players in active match
       if (room.status === 'playing' && room.game) {

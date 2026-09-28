@@ -11,18 +11,21 @@ import { useAvatarLookup } from '@/src/state/room';
 import { Backdrop } from './Backdrop';
 import { themeMeta } from '@/src/lib/themes';
 import { useActiveTheme } from '@/src/state/room';
-import { Check, Link2, MessageSquare, Settings } from 'lucide-react';
+import { Check, Info, Link2, MessageSquare, Settings } from 'lucide-react';
 import { playSfx } from '@/src/lib/audio';
 import { roomShareUrl } from '@/src/lib/roomLink';
 import { isDiscordActivity, openDiscordInvite } from '@/src/lib/discord';
 import { Avatar } from './Avatar';
 import { UI } from '@/src/config';
-import { SegmentedControl } from './CustomSelect';
+import { CompactSelect } from './CustomSelect';
+import { InfoTip } from './InfoTip';
+import { GameInfo } from './GameInfo';
 import { useNetworkStore } from '@/src/state/net';
 import { useChat } from '@/src/state/chat';
 import { ChatBubble } from './InGameChat';
 import { FullscreenToggle } from './MobileGuard';
-import type { DeckType } from '@u-no/game-engine';
+import { BLOW_UP_OPTIONS, DECK_TYPES, lockedRules, maxPlayersFor, minPlayersFor, type DeckType } from '@u-no/game-engine';
+import { modeVisual } from '@/src/modes';
 
 /** Tự động nhận diện màn hình nhỏ hoặc Discord để thu gọn tỉ lệ UI */
 function useIsCompact(): boolean {
@@ -281,6 +284,21 @@ const SEAT_POS: React.CSSProperties[] = [
   { right: 6, top: '50%', transform: 'translateY(-50%)' },
 ];
 
+/**
+ * Vị trí ghế trên bàn preview. 4 ghế giữ bố cục cũ (4 cạnh); bàn 8 ghế (Hỗn
+ * loạn) xếp đều quanh elip, cùng chiều với 4 ghế (ghế 1 bên trái), thu nhỏ
+ * thẻ lại cho khỏi đè nhau.
+ */
+function seatPosition(i: number, n: number): React.CSSProperties {
+  if (n <= 4) return SEAT_POS[i];
+  const a = (i * Math.PI * 2) / n;
+  return {
+    left: `${50 - Math.sin(a) * 40}%`,
+    top: `${50 + Math.cos(a) * 38}%`,
+    transform: 'translate(-50%, -50%) scale(.72)',
+  };
+}
+
 /** 1 người trong hàng chờ */
 function QueueChip({
   q,
@@ -425,6 +443,8 @@ export function Lobby({
   const tr = useTranslations('rules');
   const { code, seats, queue, rules, deckType, moveSeat, toQueue, setRules, setDeck, setTheme, addBot, seatFromQueue } = useRoom();
   const [copied, setCopied] = useState(false);
+  const [showRules, setShowRules] = useState(false);
+  const ti = useTranslations('info');
   const mode = useRoom((s) => s.mode);
   const meId = useRoom((s) => s.meId);
   const hostId = useRoom((s) => s.hostId);
@@ -474,6 +494,11 @@ export function Lobby({
     ['forcePlay', tr('forcePlay'), tr('forcePlaySub')],
     ['randomizeSeats', tr('randomizeSeats'), tr('randomizeSeatsSub')],
   ];
+  // Vỡ trận: mode nào cũng bật/tắt được; bật thì chọn ngưỡng ngay bên dưới lưới luật.
+  const limit = rules.blowUpAt;
+  houseRules.unshift(['blowUp', tr('blowUp'), tr('blowUpSub', { n: limit })]);
+  const locks = new Set(lockedRules(deckType));
+  const note = modeVisual(deckType).lobbyNote;
 
   return (
     <div className="absolute inset-0 overflow-hidden" style={{ background: themeMeta(theme).menu.base }}>
@@ -589,74 +614,105 @@ export function Lobby({
             </div>
           </div>
 
-          {/* CÁC PHẦN ĐỔI LUẬT & CÀI ĐẶT PHÒNG - chỉ chủ phòng mới chỉnh sửa được */}
-          <div className={`flex flex-col ${isCompact ? 'gap-2.5' : 'gap-3.5'} ${canEdit ? '' : 'pointer-events-none opacity-75'}`}>
-            {/* CÀI ĐẶT CƠ BẢN (GỌN GÀNG VỚI SEGMENTED CONTROL) */}
-            <div className={`panel flex flex-col ${isCompact ? 'gap-2.5 p-3' : 'gap-3 p-4'}`}>
+          {/* CÁC PHẦN ĐỔI LUẬT & CÀI ĐẶT PHÒNG - chỉ chủ phòng mới chỉnh sửa được.
+              KHÔNG chặn pointer-events cả khối: khách vẫn phải hover được (i) và
+              mở được bảng luật; từng control tự khoá bằng `disabled`. */}
+          <div className={`flex flex-col ${isCompact ? 'gap-2.5' : 'gap-3.5'}`}>
+            <div className={`panel flex flex-col ${isCompact ? 'gap-2 p-3' : 'gap-3 p-4'}`}>
               <GroupLabel compact={isCompact}>{tr('title')}</GroupLabel>
 
-              {/* Hàng 1: Bộ bài */}
-              <div>
-                <div className="label-sm mb-1 text-[#FFE5C4]/80">{tr('deck')}</div>
-              <SegmentedControl
-                value={deckType}
-                options={[
-                  { value: 'classic', label: tr('classic') },
-                  { value: 'flip', label: tr('flip') },
-                ]}
-                onChange={(d) => setDeck(d as DeckType)}
-                compact={isCompact}
-                disabled={!canEdit}
-              />
-            </div>
-
-            {/* Hàng 2: Số lá bắt đầu, Thời gian lượt, Điểm đích */}
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <div className="label-sm mb-1 text-[#FFE5C4]/80">{tr('startingCards')}</div>
-                <SegmentedControl
-                  value={rules.startingCards}
-                  options={[
-                    { value: 5, label: '5' },
-                    { value: 6, label: '6' },
-                    { value: 7, label: '7' },
-                  ]}
-                  onChange={(sc) => setRules({ startingCards: sc })}
-                  compact
-                  disabled={!canEdit}
-                />
+              {/* Hàng 1: Chế độ (bộ bài) + nút (i) mở bảng luật, Số người chơi */}
+              <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+                <div className="min-w-0">
+                  <div className="label-sm mb-1 flex items-center gap-1.5 text-[#FFE5C4]/80">
+                    {tr('deck')}
+                    <button
+                      type="button"
+                      className="inline-grid place-items-center text-[#FFD34D]/80 transition-colors hover:text-[#FFD34D] cursor-pointer"
+                      onClick={() => { playSfx('click'); setShowRules(true); }}
+                      title={tr('viewRules')}
+                      aria-label={tr('viewRules')}
+                    >
+                      <Info size={14} />
+                    </button>
+                  </div>
+                  <CompactSelect
+                    value={deckType}
+                    options={DECK_TYPES.map((d) => ({ value: d, label: tr(d) }))}
+                    onChange={(d) => setDeck(d as DeckType)}
+                    compact={isCompact}
+                    disabled={!canEdit}
+                  />
+                </div>
+                <div className="w-[104px]">
+                  <div className="label-sm mb-1 flex items-center gap-1.5 text-[#FFE5C4]/80">
+                    {tr('players')}
+                    <InfoTip text={tr('playersTip', { min: minPlayersFor(deckType), max: maxPlayersFor(deckType) })} />
+                  </div>
+                  <CompactSelect
+                    value={rules.maxPlayers}
+                    options={Array.from({ length: maxPlayersFor(deckType) - minPlayersFor(deckType) + 1 }, (_, i) => ({
+                      value: i + minPlayersFor(deckType), label: tr('playersN', { n: i + minPlayersFor(deckType) }),
+                    }))}
+                    onChange={(n) => setRules({ maxPlayers: n })}
+                    compact={isCompact}
+                    disabled={!canEdit}
+                  />
+                </div>
               </div>
 
-              <div>
-                <div className="label-sm mb-1 text-[#FFE5C4]/80">{tr('turnSeconds')}</div>
-                <SegmentedControl
-                  value={rules.turnSeconds}
-                  options={[
-                    { value: 15, label: '15s' },
-                    { value: 20, label: '20s' },
-                    { value: 30, label: '30s' },
-                  ]}
-                  onChange={(ts) => setRules({ turnSeconds: ts })}
-                  compact
-                  disabled={!canEdit}
-                />
-              </div>
+              {/* Bộ Hỗn loạn khác hẳn 2 bộ kia -> nói rõ luật ngay tại chỗ chọn. */}
+              {note && (
+                <div
+                  className={`rounded-[10px] ${isCompact ? 'px-2.5 py-1.5 text-[10.5px]' : 'px-3 py-2 text-[12px]'} font-semibold leading-snug text-[#FFE5C4]`}
+                  style={{ background: 'rgba(255,132,16,.12)', border: '1px solid rgba(255,132,16,.45)' }}
+                >
+                  <div className="display mb-0.5 text-[#FFD34D]">{tr(note.title)}</div>
+                  <ul className="list-disc pl-4">
+                    {note.items.map((k) => <li key={k}>{tr(k, { n: limit })}</li>)}
+                  </ul>
+                </div>
+              )}
 
-              <div>
-                <div className="label-sm mb-1 text-[#FFE5C4]/80">{tr('targetScore')}</div>
-                <SegmentedControl
-                  value={rules.targetScore}
-                  options={[
-                    { value: 0, label: tr('single') },
-                    { value: 200, label: '200' },
-                    { value: 500, label: '500' },
-                  ]}
-                  onChange={(score) => setRules({ targetScore: score })}
-                  compact
-                  disabled={!canEdit}
-                />
+              {/* Hàng 2: Số lá bắt đầu, Thời gian lượt, Điểm đích — select cho gọn */}
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <div className="label-sm mb-1 truncate text-[#FFE5C4]/80">{tr('startingCards')}</div>
+                  <CompactSelect
+                    value={rules.startingCards}
+                    options={[5, 6, 7].map((n) => ({ value: n, label: String(n) }))}
+                    onChange={(sc) => setRules({ startingCards: sc })}
+                    compact
+                    disabled={!canEdit}
+                  />
+                </div>
+                <div>
+                  <div className="label-sm mb-1 truncate text-[#FFE5C4]/80">{tr('turnSeconds')}</div>
+                  <CompactSelect
+                    value={rules.turnSeconds}
+                    options={[15, 20, 30].map((n) => ({ value: n, label: `${n}s` }))}
+                    onChange={(ts) => setRules({ turnSeconds: ts })}
+                    compact
+                    disabled={!canEdit}
+                  />
+                </div>
+                <div>
+                  <div className="label-sm mb-1 truncate text-[#FFE5C4]/80">{tr('targetScore')}</div>
+                  <CompactSelect
+                    value={rules.targetScore}
+                    options={[
+                      { value: 0, label: tr('single') },
+                      { value: 200, label: '200' },
+                      { value: 500, label: '500' },
+                      // No Mercy chính thức đua tới 1000 điểm.
+                      { value: 1000, label: '1000' },
+                    ]}
+                    onChange={(score) => setRules({ targetScore: score })}
+                    compact
+                    disabled={!canEdit}
+                  />
+                </div>
               </div>
-            </div>
 
             {/* Hàng 3: Chủ đề nền */}
             <div className="flex items-center justify-between rounded-xl bg-black/25 px-3 py-1.5 border border-white/10">
@@ -674,22 +730,64 @@ export function Lobby({
           <div className={`panel ${isCompact ? 'p-3' : 'p-3.5'}`}>
             <GroupLabel compact={isCompact}>{tr('houseRules')}</GroupLabel>
             <div className={`mt-2 grid grid-cols-2 ${isCompact ? 'gap-1.5' : 'gap-2'}`}>
-              {houseRules.map(([k, label, sub]) => (
-                <button
+              {houseRules.map(([k, label, sub]) => {
+                // Luật mode ép cứng (vd Hỗn loạn tắt rút-tới-khi-đánh-được, Party bật chồng + đánh nhanh).
+                const locked = locks.has(k);
+                return (
+                // div role="switch" thay vì <button disabled>: nút bị disabled chặn
+                // cả sự kiện chuột của con, khách sẽ không hover được (i) để đọc luật.
+                <div
                   key={k}
-                  disabled={!canEdit}
-                  onClick={() => { playSfx('click'); setRules({ [k]: !rules[k] } as never); }}
+                  role="switch"
+                  aria-checked={!!rules[k]}
+                  aria-disabled={!canEdit || locked}
+                  tabIndex={canEdit && !locked ? 0 : -1}
+                  title={locked ? tr('lockedByMode') : undefined}
+                  onClick={() => {
+                    if (!canEdit || locked) return;
+                    playSfx('click');
+                    setRules({ [k]: !rules[k] } as never);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    if (!canEdit || locked) return;
+                    playSfx('click');
+                    setRules({ [k]: !rules[k] } as never);
+                  }}
                   className={`flex items-center justify-between gap-2 rounded-[10px] bg-white/[.07] ${isCompact ? 'px-2.5 py-1.5' : 'px-3 py-2'
-                    } text-left transition-all hover:bg-white/10 ${!canEdit ? 'cursor-not-allowed opacity-75' : ''}`}
+                    } text-left transition-all ${canEdit && !locked ? 'cursor-pointer hover:bg-white/10' : 'cursor-not-allowed opacity-75'}`}
                 >
                   <span className="overflow-hidden">
-                    <span className={`display block truncate leading-tight text-[#FFF3DA] ${isCompact ? 'text-[13px]' : 'text-[15px]'}`}>{label}</span>
+                    <span className={`display flex items-center gap-1 leading-tight text-[#FFF3DA] ${isCompact ? 'text-[13px]' : 'text-[15px]'}`}>
+                      <span className="truncate">{label}</span>
+                      <InfoTip text={ti(`${k}Body`, { n: limit })} size={isCompact ? 12 : 13} />
+                    </span>
                     <span className={`block truncate font-semibold text-[#C79A76] ${isCompact ? 'text-[10px]' : 'text-[11px]'}`}>{sub}</span>
                   </span>
                   <Toggle on={!!rules[k]} />
-                </button>
-              ))}
+                </div>
+                );
+              })}
             </div>
+            {/* Ngưỡng vỡ trận — chỉ hiện khi đã bật luật. */}
+            {rules.blowUp && (
+              <div className={`flex items-center justify-between gap-3 rounded-[10px] bg-white/[.07] ${isCompact ? 'mt-1.5 px-2.5 py-1.5' : 'mt-2 px-3 py-2'}`}>
+                <span className={`display flex items-center gap-1 text-[#FFF3DA] ${isCompact ? 'text-[13px]' : 'text-[15px]'}`}>
+                  💥 {tr('blowUpAt')}
+                  <InfoTip text={ti('blowUpBody', { n: limit })} size={isCompact ? 12 : 13} />
+                </span>
+                <div className="w-[120px]">
+                  <CompactSelect
+                    value={rules.blowUpAt}
+                    options={BLOW_UP_OPTIONS.map((n) => ({ value: n, label: tr('blowUpAtN', { n }) }))}
+                    onChange={(n) => setRules({ blowUpAt: n })}
+                    compact
+                    disabled={!canEdit}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -716,7 +814,7 @@ export function Lobby({
               <div className="label pointer-events-none absolute left-1/2 top-1/2 max-w-[140px] -translate-x-1/2 -translate-y-1/2 text-center text-[10px] tracking-[.12em] text-[#FFE0B3]/80">
                 {t('dragHint')}
               </div>
-              {seats.map((s, i) => (
+              {seats.slice(0, rules.maxPlayers).map((s, i) => (
                 <SeatChip
                   key={i}
                   seat={s}
@@ -724,7 +822,7 @@ export function Lobby({
                   meId={meId}
                   hostId={hostId}
                   canEdit={canEdit}
-                  position={SEAT_POS[i]}
+                  position={seatPosition(i, rules.maxPlayers)}
                   isCompact={isCompact}
                 />
               ))}
@@ -732,7 +830,7 @@ export function Lobby({
 
             <QueuePanel
               queue={queue}
-              seats={seats}
+              seats={seats.slice(0, rules.maxPlayers)}
               meId={meId}
               hostId={hostId}
               canEdit={canEdit}
@@ -756,6 +854,7 @@ export function Lobby({
           </div>
         </div>
       </div>
+      {showRules && <GameInfo rules={rules} deckType={deckType} onClose={() => setShowRules(false)} />}
     </div>
   );
 }

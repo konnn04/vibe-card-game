@@ -10,15 +10,16 @@ import {
   CARD_FLIGHT_MS, DEAL_STAGGER_MS, DRAW_FAST_DUR_MS, DRAW_FAST_STAGGER_MS, DRAW_SLOW_MS, SWAP_FLY_MS, SWAP_GATHER_MS,
 } from '@/src/state/timeline';
 import { CardMesh, warmCardMaterials } from './CardMesh';
-import { DECK_POS, DISCARD_POS, deckTransform, discardTransform, fanTransform, seatIndex, seatPos } from './layout';
+import { DECK_POS, DISCARD_POS, deckTransform, discardTransform, fanTransform, seatIndex, seatPos, sidePileTransform } from './layout';
 import { resetForNewRound, setSpawnOrigin, setTarget, shake, tick } from './stage';
-import { PHOTO_BACK_NAME, resolvePhotoSprite, usePhotoAtlas, type PhotoAtlas } from './photoAtlas';
+import { PHOTO_BACK_NAME, resolvePhotoSprite, usePhotoAtlas, type AtlasVariant, type PhotoAtlas } from './photoAtlas';
+import { modeVisual, resolveCardSprite } from '@/src/modes';
 import { gfxOf, useSettings } from '@/src/lib/settings';
 import { playSfx } from '@/src/lib/audio';
 
 interface Item {
   card: Card;
-  zone: 'hand' | 'discard' | 'deck';
+  zone: 'hand' | 'discard' | 'deck' | 'side';
   ownerIdx: number;
   index: number;
   layerIndex: number;
@@ -31,8 +32,9 @@ interface Item {
 // Thu tu sap xep bai chinh dien: Light (red/yellow/green/blue) va Dark (pink/teal/orange/purple)
 const COLOR_ORDER: Record<string, number> = {
   red: 0, yellow: 1, green: 2, blue: 3,
-  pink: 0, teal: 1, orange: 2, purple: 3,
-  wild: 4,
+  // Dark xếp SAU Light: bộ Hỗn loạn có cả 8 màu trên cùng một tay.
+  pink: 4, teal: 5, orange: 6, purple: 7,
+  wild: 8,
 };
 const VALUE_ORDER: Record<string, number> = {
   '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
@@ -77,8 +79,9 @@ function collect(state: GameState, myId: string, maxDiscard: number, maxOpp: num
         return a.id.localeCompare(b.id);
       });
     } else {
-      // Gioi han 10 la cuoi -- la moi rut luon nam cuoi tay -> luon thay animation
-      visible = p.hand.slice(-10);
+      // Gioi han 10 la cuoi -- la moi rut luon nam cuoi tay -> luon thay animation.
+      // Ban dong (Hon loan) quat hep hon -> chi hien 8 la.
+      visible = p.hand.slice(n > 4 ? -8 : -10);
     }
     visible.forEach((card, i) => {
       out.push({ card, zone: 'hand', ownerIdx: pi, index: i, layerIndex: i, count: visible.length, mine });
@@ -89,6 +92,11 @@ function collect(state: GameState, myId: string, maxDiscard: number, maxOpp: num
   discardSlice.forEach((card, i, arr) => {
     const pileIndex = state.discard.length - arr.length + i;
     out.push({ card, zone: 'discard', ownerIdx: -1, index: pileIndex, layerIndex: i, count: arr.length, mine: false });
+  });
+
+  // Party — chồng phụ 3 lá con: lá ngửa, xếp so le cạnh đống bỏ để đếm được.
+  (state.pileUp?.cards ?? []).forEach((card, i, arr) => {
+    out.push({ card, zone: 'side', ownerIdx: -1, index: i, layerIndex: i, count: arr.length, mine: false });
   });
 
   for (let i = 0; i < DECK_LAYERS; i++) {
@@ -241,8 +249,10 @@ export function Cards({ paused = false }: { paused?: boolean }) {
   const cardShooterMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const f of fx) {
-      if (f.payload?.t === 'play' && f.payload.cardId && f.payload.playerId)
+      if ((f.payload?.t === 'play' || f.payload?.t === 'pileUp') && f.payload.cardId && f.payload.playerId)
         map.set(f.payload.cardId, f.payload.playerId);
+      // No Mercy — Bỏ hết: các lá cùng màu cũng bay từ tay người đánh.
+      if (f.payload?.t === 'discardAll') for (const id of f.payload.cardIds) map.set(id, f.payload.playerId);
     }
     return map;
   }, [fx]);
@@ -278,9 +288,10 @@ export function Cards({ paused = false }: { paused?: boolean }) {
   }, [fx]);
 
   // Atlas anh that -- Flip can ca light lan dark (lat mat bat cu luc nao)
-  const isFlipDeck = state?.deckType === 'flip';
-  const variantA = isFlipDeck ? 'flipLight' : 'std';
-  const variantB = isFlipDeck ? 'flipDark' : null;
+  // Atlas cần tải lấy từ bảng mode (client/src/modes.ts): tối đa 2 khe.
+  const visual = modeVisual(state?.deckType ?? 'classic');
+  const isFlipDeck = visual.twoSided;
+  const [variantA, variantB] = visual.atlases;
   const atlasA = usePhotoAtlas(variantA);
   const atlasB = usePhotoAtlas(variantB);
   const wantStandard = gfx.standardMaterial;
@@ -292,6 +303,10 @@ export function Cards({ paused = false }: { paused?: boolean }) {
   const photoAtlasFor = useCallback(
     (side: 'light' | 'dark'): PhotoAtlas | null => (isFlipDeck && side === 'dark' ? atlasB : atlasA),
     [isFlipDeck, atlasA, atlasB],
+  );
+  const atlasOfVariant = useCallback(
+    (v: AtlasVariant): PhotoAtlas | null => (v === variantB ? atlasB : atlasA),
+    [atlasA, atlasB, variantB],
   );
 
   const getShooterHandPos = useCallback((cardId: string): THREE.Vector3 => {
@@ -406,6 +421,15 @@ export function Cards({ paused = false }: { paused?: boolean }) {
         continue;
       }
 
+      if (it.zone === 'side') {
+        const t = sidePileTransform(it.index);
+        const shooterHandPos = getShooterHandPos(it.card.id);
+        // Lá mồi (index 0) lật từ chồng rút; các lá sau bay từ tay người đánh.
+        setSpawnOrigin(it.card.id, it.index === 0 ? DECK_POS.clone() : shooterHandPos, new THREE.Euler(-Math.PI / 2, 0, 0));
+        setTarget(it.card.id, t.p, t.q, t.s, { arc: 0.85, dur: CARD_FLIGHT_MS / 1000 });
+        continue;
+      }
+
       if (it.zone === 'discard') {
         const t = discardTransform(it.index, it.layerIndex);
         const isFirstCardOfRound = it.index === 0;
@@ -506,23 +530,22 @@ export function Cards({ paused = false }: { paused?: boolean }) {
         const hasChosenColor = !!rememberedColor;
         const displayColor = rememberedColor ?? f.color;
 
-        const photoAtlas = photoAtlasFor(displaySide);
         // Truyen f.color (luon la 'wild') chu khong phai displayColor -- resolvePhotoSprite can detect wild
-        const photoFaceName = photoAtlas
-          ? resolvePhotoSprite(photoAtlas.variant, f.color, f.value, hasChosenColor ? displayColor : undefined)
-          : null;
+        const sprite = resolveCardSprite(state.deckType, displaySide, it.card, f, hasChosenColor ? displayColor : undefined);
+        const photoAtlas = atlasOfVariant(sprite.variant);
+        const photoFaceName = photoAtlas ? sprite.name : null;
 
         // Flip: mat lung = mat con lai that cua la (khong co logo back chung)
         let photoBackAtlas: PhotoAtlas | null | undefined;
         let photoBackNameFinal: string | null;
-        if (state.deckType === 'flip' && it.zone !== 'deck') {
+        if (isFlipDeck && it.zone !== 'deck') {
           const otherSide: DeckSide = state.side === 'light' ? 'dark' : 'light';
           const otherFace = face(it.card, otherSide);
           const otherAtlas = photoAtlasFor(otherSide);
           photoBackAtlas = otherAtlas;
           photoBackNameFinal = otherAtlas
             ? resolvePhotoSprite(otherAtlas.variant, otherFace.color, otherFace.value) : null;
-        } else if (state.deckType === 'flip' && it.zone === 'deck') {
+        } else if (isFlipDeck && it.zone === 'deck') {
           // Chong rut Flip: mat ngua = mat con lai cua la sap rut
           const otherSide: DeckSide = state.side === 'light' ? 'dark' : 'light';
           const otherAtlas = photoAtlasFor(otherSide);
@@ -559,7 +582,7 @@ export function Cards({ paused = false }: { paused?: boolean }) {
             isMe={it.mine}
             standard={gfx.standardMaterial}
             shadows={gfx.shadows}
-            sides={it.mine || it.zone === 'discard' ? 'both' : 'back'}
+            sides={it.mine || it.zone === 'discard' || it.zone === 'side' ? 'both' : 'back'}
             photoAtlas={photoAtlas}
             photoFaceName={photoFaceName}
             photoBackAtlas={photoBackAtlas}
@@ -578,7 +601,13 @@ export function Cards({ paused = false }: { paused?: boolean }) {
               it.zone === 'deck'
                 ? () => act({ type: 'DRAW', playerId: myId })
                 : (id) => {
-                    if (!playable) { shake(id); playSfx('click', 0.6); return; }
+                    if (!playable) {
+                      // Party — Đánh nhanh: được thử đánh lá số ngoài lượt; sai bài
+                      // thì engine phạt rút 1 lá (đúng luật), không chỉ lắc lá.
+                      const trySpeed = state.deckType === 'party' && !myTurnNow && !holding
+                        && state.phase === 'awaitPlay' && !state.pileUp && !state.pending && /^\d$/.test(f.value);
+                      if (!trySpeed) { shake(id); playSfx('click', 0.6); return; }
+                    }
                     act({ type: 'PLAY', playerId: myId, cardId: id });
                   }
             }

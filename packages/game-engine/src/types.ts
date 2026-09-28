@@ -15,7 +15,12 @@ export type CardValue =
   // Flip — mặt Dark: Skip Everyone, Draw Five (+5), Wild Draw Color (rút tới khi ra đúng màu)
   | 'draw5' | 'skipAll' | 'wildColor'
   // Flip — dùng chung cho cả 2 mặt (lá nào cũng có, chỉ đổi hình khi lật)
-  | 'flip';
+  | 'flip'
+  // Party — Chỉ tay (lá màu, mở vòng bình chọn), Cọng xích và 3 lá con (Wild)
+  | 'pointTaken' | 'wildTogether' | 'wildPileUp'
+  // No Mercy — lá màu: +4 màu, Bỏ hết cùng màu (Skip Everyone dùng lại 'skipAll');
+  // Wild: Đảo chiều +4, +6, +10, Color Roulette
+  | 'draw4' | 'discardAll' | 'wildRev4' | 'wild6' | 'wild10' | 'wildRoulette';
 
 export type DeckSide = 'light' | 'dark';
 
@@ -31,9 +36,20 @@ export interface Card {
   dark?: CardFace;
   /** true = lá đã bị che khi gửi qua mạng (chỉ biết id, không biết mặt). */
   hidden?: boolean;
+  /**
+   * Bộ Hỗn loạn: lá MỘT MẶT nhưng vẽ bằng ảnh mặt Dark của bộ Flip (mặt lưng
+   * vẫn là lưng bộ cổ điển). Chỉ cần cho lá Wild thường — mọi lá Dark khác đã
+   * tự nhận ra được qua màu (pink/teal/orange/purple) hoặc trị riêng.
+   */
+  art?: 'dark';
 }
 
-export type DeckType = 'classic' | 'flip';
+/**
+ * Chế độ chơi = bộ bài + luật riêng. Mỗi giá trị có một class DeckMode trong
+ * modes.ts (thành phần bộ bài, số người, luật bị khoá...). Thêm mode mới: thêm
+ * tên ở đây + một class ở modes.ts + một mục hiển thị ở client/src/modes.ts.
+ */
+export type DeckType = 'classic' | 'flip' | 'chaos' | 'party' | 'noMercy';
 
 export interface Rules {
   sevenZero: boolean;      // 0 = đổi bài cả bàn theo chiều, 7 = chọn 1 người để đổi
@@ -46,10 +62,18 @@ export interface Rules {
   forcePlay: boolean;
   startingCards: number;   // 5..7
   turnSeconds: number;     // 15/20/30
-  maxPlayers: number;      // 2..4
+  /** Số người chơi tối đa của phòng (chủ phòng chọn): 2..maxPlayersFor(bộ bài). */
+  maxPlayers: number;
   teamMode: boolean;       // 2v2 khi đủ 4 người, ghế đối diện cùng đội
   targetScore: number;     // 0 = chơi 1 ván; >0 = race-to-N
   randomizeSeats: boolean; // đổi chỗ ngồi ngẫu nhiên mỗi ván
+  /**
+   * VỠ TRẬN (luật tuỳ chọn, mọi mode): tay bài VƯỢT `blowUpAt` lá thì nổ tung,
+   * bị loại khỏi ván. Mặc định bật ở Hỗn loạn / Party / No Mercy.
+   */
+  blowUp: boolean;
+  /** Ngưỡng vỡ trận — một trong BLOW_UP_OPTIONS (24/30/36/40). 24 = luật Mercy của No Mercy. */
+  blowUpAt: number;
 }
 
 export interface PlayerState {
@@ -63,6 +87,11 @@ export interface PlayerState {
   /** Số ván liên tục đã chơi (dùng cho queue rotation ở lobby). */
   consecutiveRounds: number;
   connected: boolean;
+  /**
+   * VỠ TRẬN (chỉ bộ Hỗn loạn): tay bài vượt ELIMINATE_OVER lá -> bị loại khỏi
+   * ván hiện tại. Bài trả về chồng rút, lượt đi bỏ qua người này tới hết ván.
+   */
+  eliminated?: boolean;
 }
 
 /**
@@ -84,6 +113,11 @@ export type PendingDraw =
        * không phải dựng lại quá khứ.
        */
       wild4?: { by: string; illegal: boolean; revealedCard?: Card };
+      /**
+       * Số lá rút của LÁ VỪA CHỒNG gần nhất. No Mercy chồng theo giá trị: chỉ
+       * lá rút có giá trị >= số này mới chồng tiếp được (màu không quan trọng).
+       */
+      last?: number;
     }
   | { value: 'drawColor'; color: CardColor }
   | null;
@@ -93,6 +127,9 @@ export type Phase =
   | 'awaitPlay'
   | 'awaitColor'      // vừa đánh wild, chờ chọn màu
   | 'awaitSwapTarget' // vừa đánh 7, chờ chọn người đổi bài
+  | 'awaitChain'      // Party: vừa đánh Cọng xích, chờ chọn 2 người bị xích
+  | 'awaitVote'       // Party: vòng bình chọn đồng loạt của lá Chỉ tay
+  | 'awaitRoulette'   // No Mercy: người bị Color Roulette chọn màu (qua CHOOSE_COLOR)
   | 'roundEnd'
   | 'matchEnd';
 
@@ -161,9 +198,26 @@ export interface GameState {
    * người ta không bao giờ kịp hô.
    */
   rushWindow: { playerId: string; openedAt: number; until: number } | null;
-  /** Hiệu ứng đang chờ input client (chọn màu wild / chọn người đổi bài luật 7). */
+  /**
+   * PARTY — vòng bình chọn của lá Chỉ tay. Mọi người còn trong ván chọn KÍN 1
+   * người khác trước `deadline`; hết giờ (hoặc đủ phiếu) mới lộ kết quả, ai
+   * nhận N phiếu rút min(N, VOTE_MAX_DRAW) lá. `votes`: người bầu -> người bị
+   * bầu (publicView che thành '' để không ai biết ai bầu ai trước khi lộ).
+   */
+  vote?: { by: string; deadline: number; votes: Record<string, string> } | null;
+  /**
+   * PARTY — Cọng xích: 2 người bị xích với nhau, mọi lần rút bài của người
+   * này tự động nhân bản sang người kia. Tồn tại tới khi có lá Chỉ tay hoặc hết ván.
+   */
+  chain?: { a: string; b: string } | null;
+  /**
+   * PARTY — 3 lá con: vòng chơi phụ. Chỉ được đánh lá đúng `color` vào chồng
+   * phụ `cards`; ai không đánh được/không muốn thì ôm hết chồng phụ.
+   */
+  pileUp?: { color: CardColor; by: string; cards: Card[] } | null;
+  /** Hiệu ứng đang chờ input client (chọn màu wild / chọn người đổi bài luật 7 / chọn 2 người bị xích). */
   resume: {
-    kind: 'color' | 'swap';
+    kind: 'color' | 'swap' | 'chain' | 'roulette';
     cardId: string;
     playerId: string;
     /** Lá Wild +N này có bị đánh SAI LUẬT không (còn lá đúng màu trên tay).
@@ -172,6 +226,11 @@ export interface GameState {
     wild4Card?: Card;
   } | null;
   drawnThisTurn: boolean;    // đã rút trong lượt này (không được rút tiếp)
+  /**
+   * No Mercy — "rút tới khi đánh được, rồi BẮT BUỘC đánh lá đó": id lá vừa rút
+   * trúng. Khác null thì lượt này chỉ được đánh đúng lá này. setTurn xoá.
+   */
+  mustPlayCardId?: string | null;
   /**
    * CHUỖI RÚT BÀI ĐANG DỞ — mỗi action DRAW chỉ rút ĐÚNG 1 LÁ, rút xong chờ
    * hết animation của lá đó rồi mới xét điều kiện dừng; chưa thoả thì rút lá
@@ -222,6 +281,10 @@ export type Action =
   /** Bắt lỗi Wild +4: nghi người trước đánh +4 trong khi vẫn còn lá đúng màu. */
   | { type: 'CHALLENGE'; playerId: string }
   | { type: 'NEXT_ROUND' }
+  /** Party: bầu kín 1 người trong vòng Chỉ tay (đổi phiếu được tới khi hết giờ). */
+  | { type: 'VOTE'; playerId: string; targetId: string }
+  /** Party: chọn 2 người bị Cọng xích (có thể gồm chính mình). */
+  | { type: 'CHAIN'; playerId: string; a: string; b: string }
   /** Thả cảm xúc — thuần hiển thị, KHÔNG đổi state ván đấu (xem case 'EMOTE' trong engine.ts). */
   | { type: 'EMOTE'; playerId: string; emote: string };
 
@@ -248,6 +311,30 @@ export type GameEvent =
   | { t: 'challenge'; playerId: string; targetId: string; success: boolean; revealedCard?: Card }
   | { t: 'rush'; playerId: string }
   | { t: 'caught'; playerId: string; amount: number }
+  /** Party — mở vòng bình chọn Chỉ tay. */
+  | { t: 'voteStart'; by: string; deadline: number }
+  /** Party — lộ kết quả: `tally` người -> số phiếu, `votes` người bầu -> người bị bầu. */
+  | { t: 'voteResult'; tally: Record<string, number>; votes: Record<string, string> }
+  /** Party — Cọng xích nối 2 người. */
+  | { t: 'chain'; a: string; b: string }
+  /** Party — xích bị phá (bởi lá Chỉ tay). */
+  | { t: 'chainBreak' }
+  /** Party — xích kéo: `from` vừa rút `n` lá nên `to` bị rút theo. */
+  | { t: 'chainPull'; from: string; to: string; n: number }
+  /** Party — mở chồng phụ 3 lá con với màu `color`, lá mồi `cardId`. */
+  | { t: 'pileUpStart'; color: CardColor; cardId: string }
+  /** Party — đánh `cardId` vào chồng phụ. */
+  | { t: 'pileUp'; playerId: string; cardId: string; count: number }
+  /** Party — `playerId` ôm cả chồng phụ (`cardIds`). */
+  | { t: 'pileUpTake'; playerId: string; cardIds: string[] }
+  /** No Mercy — Bỏ hết: các lá cùng màu (`cardIds`) theo lá Discard All xuống đống bỏ. */
+  | { t: 'discardAll'; playerId: string; cardIds: string[] }
+  /** No Mercy — Color Roulette nhắm vào `playerId` (người đó chọn màu rồi lật tới khi ra màu). */
+  | { t: 'roulette'; playerId: string }
+  /** Party — đánh nhanh sai bài: phạt rút `amount` lá. */
+  | { t: 'jumpFail'; playerId: string; amount: number }
+  /** Vỡ trận: `cards` = số lá trên tay lúc bị loại (đã trả về chồng rút). */
+  | { t: 'eliminated'; playerId: string; cards: number }
   | { t: 'turn'; playerId: string; deadline: number }
   | { t: 'roundEnd'; winnerId: string; scores: Record<string, number> }
   | { t: 'matchEnd'; winnerId: string }

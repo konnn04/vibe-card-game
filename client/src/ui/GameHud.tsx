@@ -3,12 +3,14 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Ban } from 'lucide-react';
-import { canPlay, hotkeyCard, RUSH_GRACE_MS } from '@u-no/game-engine';
+import { canPlay, colorsFor, hotkeyCard, RUSH_GRACE_MS } from '@u-no/game-engine';
 import { useMatch } from '@/src/state/match';
 import { useRoom } from '@/src/state/room';
 import { useTurnHold, useTurnStage } from '@/src/state/useTurnHold';
 import { playSfx } from '@/src/lib/audio';
 import { ColorWheel, SwapPicker } from './Pickers';
+import { SeatPointer } from './SeatPointer';
+import { COLOR_HEX } from '@/src/three/atlas';
 import { useSettings } from '@/src/lib/settings';
 import { Avatar } from './Avatar';
 import { DirectionBadge } from './DirectionBadge';
@@ -17,6 +19,7 @@ import { isTakenOver } from '@/src/lib/takeover';
 import { useChat } from '@/src/state/chat';
 import { ChatBubble, ChatTriggerButton } from './InGameChat';
 import { FullscreenToggle } from './MobileGuard';
+import { GameInfo } from './GameInfo';
 
 function useIsMobileLandscape(): boolean {
   const [isMob, setIsMob] = useState(false);
@@ -129,6 +132,14 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
   const animating = useTurnHold();
   const left = useSecondsLeft(state?.turnDeadline ?? 0, animating, state?.rules.turnSeconds ?? 20);
   const myChat = useChat((s) => s.messages[myId]);
+  const tInfo = useTranslations('info');
+  const [showInfo, setShowInfo] = useState(false);
+  /**
+   * Party — phiếu Chỉ tay CỦA MÌNH. State công khai che mọi phiếu (kể cả của
+   * mình) thành '', nên nhớ ở đây để tô nút đã chọn. Gắn theo hạn bầu: sang
+   * vòng bầu mới là tự trống.
+   */
+  const [myVote, setMyVote] = useState<{ deadline: number; target: string } | null>(null);
 
   const me = state?.players.find((p) => p.id === myId);
   /**
@@ -273,7 +284,9 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
 
   if (!state || state.phase === 'roundEnd' || state.phase === 'matchEnd') return null;
   const current = state.players[state.turn];
-  const needColor = state.phase === 'awaitColor' && state.resume?.playerId === myId;
+  // No Mercy — bị Color Roulette nhắm vào cũng chọn màu bằng bánh xe (CHOOSE_COLOR).
+  const needRoulette = state.phase === 'awaitRoulette' && state.resume?.playerId === myId;
+  const needColor = (state.phase === 'awaitColor' && state.resume?.playerId === myId) || needRoulette;
   const needSwap = state.phase === 'awaitSwapTarget' && state.resume?.playerId === myId;
   const catchable = state.rushWindow && state.rushWindow.playerId !== myId
     ? state.players.find((p) => p.id === state.rushWindow!.playerId)
@@ -292,6 +305,15 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
           title={tSettings('title')}
         >
           ⚙
+        </button>
+        <button
+          className={`grid place-items-center rounded-full font-serif font-bold italic text-[#FFE2A8] ${isMobile ? 'h-[30px] w-[30px] text-[15px]' : 'h-[38px] w-[38px] text-[18px]'}`}
+          style={{ background: 'rgba(20,8,12,.55)', border: '2px solid rgba(255,215,140,.5)' }}
+          onClick={() => { playSfx('click'); setShowInfo(true); }}
+          aria-label={tInfo('open')}
+          title={tInfo('open')}
+        >
+          i
         </button>
         <FullscreenToggle />
         {roomCode && (
@@ -314,6 +336,25 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
           >
             <span>{copiedCode ? 'Copied!' : roomCode}</span>
           </button>
+        )}
+        {/* Party — vòng phụ 3 lá con: màu phải đánh + số lá đang dồn. */}
+        {state.pileUp && (
+          <motion.span
+            initial={{ scale: 0.8 }} animate={{ scale: 1 }}
+            className={`label rounded-[10px] ${isMobile ? 'px-2 py-1 text-[11px]' : 'px-3 py-1.5 text-[13px]'} text-white`}
+            style={{ background: COLOR_HEX[state.pileUp.color], boxShadow: '0 0 0 2px rgba(255,255,255,.7)' }}
+          >
+            {t('pileUpBadge', { n: state.pileUp.cards.length })}
+          </motion.span>
+        )}
+        {/* Party — cặp đang bị Cọng xích. */}
+        {state.chain && (
+          <span
+            className={`label rounded-[10px] ${isMobile ? 'px-2 py-1 text-[11px]' : 'px-3 py-1.5 text-[13px]'} text-[#FFF3DA]`}
+            style={{ background: 'rgba(20,8,12,.7)', border: '1px solid rgba(255,215,140,.5)' }}
+          >
+            🔗 {state.players.find((p) => p.id === state.chain!.a)?.name} · {state.players.find((p) => p.id === state.chain!.b)?.name}
+          </span>
         )}
         {state.pending && (
           <motion.span
@@ -379,15 +420,15 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
         </motion.div>
       </div>
 
-      {/* HUD của mình: vòng đếm ngược quanh avatar */}
+      {/* HUD của mình: vòng đếm ngược quanh avatar — gọn để không lấn quạt bài */}
       {seated && (
-        <div className={`absolute ${isMobile ? 'bottom-2.5 left-3 gap-2' : 'bottom-8 left-8 gap-3'} flex items-center`}>
+        <div className={`absolute ${isMobile ? 'bottom-2 left-2.5 gap-1.5' : 'bottom-5 left-5 gap-2'} flex items-center`}>
           {myChat && (
             <div className="pointer-events-none absolute -top-12 left-2 z-30 whitespace-nowrap">
               <ChatBubble message={myChat.message} />
             </div>
           )}
-          <TurnDial left={left} seconds={state.rules.turnSeconds} active={myTurn} size={isMobile ? 54 : 86}>
+          <TurnDial left={left} seconds={state.rules.turnSeconds} active={myTurn} size={isMobile ? 44 : 64}>
             <div className="relative">
               {(() => {
                 const mine = fx.filter((f) => f.kind === 'emote' && f.payload.t === 'emote' && f.payload.playerId === myId);
@@ -415,14 +456,14 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
                     className="pointer-events-none absolute inset-0 z-10 grid place-items-center"
                     style={{ animation: 'banPop 1.2s ease-out forwards' }}
                   >
-                    <Ban size={isMobile ? 28 : 44} strokeWidth={3} color="#fff" style={{ filter: 'drop-shadow(0 0 6px rgba(226,59,46,.9)) drop-shadow(0 2px 4px rgba(0,0,0,.7))' }} />
+                    <Ban size={isMobile ? 24 : 34} strokeWidth={3} color="#fff" style={{ filter: 'drop-shadow(0 0 6px rgba(226,59,46,.9)) drop-shadow(0 2px 4px rgba(0,0,0,.7))' }} />
                   </div>
                 );
               })()}
               <Avatar
                 name={me?.name ?? ''}
                 preset={avatarPreset}
-                size={isMobile ? (myTurn ? 48 : 42) : (myTurn ? 78 : 70)}
+                size={isMobile ? (myTurn ? 38 : 34) : (myTurn ? 58 : 52)}
                 self
                 className={`seat__avatar !rounded-full ${myTurn ? 'avatar--turn' : ''}`}
               />
@@ -430,17 +471,28 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
           </TurnDial>
           <div>
             <div
-              className={`display inline-block rounded-[7px] ${isMobile ? 'px-2 py-0.5 text-[14px]' : 'px-3.5 py-1 text-[20px]'}`}
+              className={`display inline-block max-w-[140px] truncate rounded-[6px] align-bottom ${isMobile ? 'px-1.5 py-0.5 text-[12px]' : 'px-2.5 py-0.5 text-[15px]'}`}
               style={{ background: 'linear-gradient(90deg,#FFB534,#FF8A2B)', color: '#2A1508' }}
             >
               {me?.name}
             </div>
-            <div className={`label ${isMobile ? 'mt-0.5 text-[11px]' : 'mt-1.5 text-[15px]'} text-[#FFE0B3]`}>
+            <div className={`label ${isMobile ? 'mt-0.5 text-[10px]' : 'mt-1 text-[12px]'} text-[#FFE0B3]`}>
               {t('cards', { n: me?.hand.length ?? 0 })} · {me?.score ?? 0}
             </div>
           </div>
-          <EmotePicker size={isMobile ? 32 : 44} onPick={(emote) => act({ type: 'EMOTE', playerId: myId, emote })} />
-          <ChatTriggerButton size={isMobile ? 32 : 44} />
+          <EmotePicker size={isMobile ? 28 : 36} onPick={(emote) => act({ type: 'EMOTE', playerId: myId, emote })} />
+          <ChatTriggerButton size={isMobile ? 28 : 36} />
+        </div>
+      )}
+
+      {me?.eliminated && (
+        <div className={`pointer-events-none absolute left-1/2 -translate-x-1/2 ${isMobile ? 'bottom-3' : 'bottom-10'}`}>
+          <div
+            className={`label rounded-[14px] ${isMobile ? 'px-3 py-1.5 text-[12px]' : 'px-5 py-3 text-[15px]'}`}
+            style={{ background: 'rgba(40,8,4,.8)', border: '1px solid rgba(255,132,16,.6)', color: '#FFD34D' }}
+          >
+            {t('eliminatedBanner')}
+          </div>
         </div>
       )}
 
@@ -530,7 +582,8 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
               isCompact={isMobile}
               onClick={() => act({ type: 'DRAW', playerId: myId })}
             >
-              {t('draw')}
+              {/* Vòng 3 lá con: "rút" nghĩa là ôm cả chồng phụ. */}
+              {state.pileUp ? t('takePile', { n: state.pileUp.cards.length }) : t('draw')}
             </ActionButton>
           )}
           {!!sCard && (
@@ -553,15 +606,59 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
 
       <ColorWheel
         open={needColor}
-        side={state.side}
+        // Chọn màu cho lá Wild vừa đánh (đang nằm trên đỉnh đống): Hỗn loạn
+        // chỉ cho gọi màu cùng hệ với lá đó (Light hoặc Dark).
+        colors={colorsFor(state, state.discard[state.discard.length - 1])}
+        title={needRoulette ? t('pickRoulette') : undefined}
         seconds={secondsLeft}
         onPick={(c) => act({ type: 'CHOOSE_COLOR', playerId: myId, color: c })}
       />
-      <SwapPicker
+      {/* Luật 7: chỉ tay vào người muốn đổi bài (không gồm người đã bị loại). */}
+      <SeatPointer
         open={needSwap}
-        names={state.players.filter((p) => p.id !== myId).map((p) => ({ id: p.id, name: p.name, n: p.hand.length }))}
+        title={t('pickSwap')}
+        deadline={state.turnDeadline}
+        targets={state.players
+          .filter((p) => p.id !== myId && !p.eliminated)
+          .map((p) => ({ id: p.id, name: p.name, sub: t('cards', { n: p.hand.length }) }))}
         onPick={(id) => act({ type: 'SWAP_TARGET', playerId: myId, targetId: id })}
       />
+      {/* Party — bầu Chỉ tay: cả bàn cùng chỉ tay (bầu kín), đổi được tới khi hết giờ. */}
+      <SeatPointer
+        open={state.phase === 'awaitVote' && !!state.vote && seated && !me?.eliminated}
+        title={t('voteTitle')}
+        subtitle={t('voteSub')}
+        deadline={state.vote?.deadline}
+        progress={(() => {
+          const done = Object.keys(state.vote?.votes ?? {}).length;
+          const total = state.players.filter((p) => !p.eliminated).length;
+          return { done, total, label: t('voteProgress', { n: done, total }) };
+        })()}
+        targets={state.players
+          .filter((p) => p.id !== myId && !p.eliminated)
+          .map((p) => ({ id: p.id, name: p.name, sub: t('cards', { n: p.hand.length }) }))}
+        picked={myVote && myVote.deadline === state.vote?.deadline ? [myVote.target] : []}
+        onPick={(id) => {
+          setMyVote({ deadline: state.vote?.deadline ?? 0, target: id });
+          act({ type: 'VOTE', playerId: myId, targetId: id });
+        }}
+      />
+      {/* Party — Cọng xích: chỉ lần lượt vào 2 người (có thể gồm chính mình). */}
+      <SeatPointer
+        key={state.resume?.kind === 'chain' ? state.resume.cardId : 'none'}
+        open={state.phase === 'awaitChain' && state.resume?.playerId === myId}
+        title={t('chainTitle')}
+        subtitle={t('chainSub')}
+        deadline={state.turnDeadline}
+        picks={2}
+        targets={state.players
+          .filter((p) => !p.eliminated)
+          .map((p) => ({ id: p.id, name: p.id === myId ? t('you') : p.name, sub: t('cards', { n: p.hand.length }) }))}
+        onConfirm={([a, b]) => act({ type: 'CHAIN', playerId: myId, a, b })}
+      />
+      {showInfo && (
+        <GameInfo rules={state.rules} deckType={state.deckType} onClose={() => setShowInfo(false)} />
+      )}
     </div>
   );
 }
@@ -578,7 +675,7 @@ function EmotePicker({ onPick, size = 44 }: { onPick: (emote: string) => void; s
   const t = useTranslations('settings');
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  const iconSize = size <= 34 ? 'text-[15px]' : 'text-[20px]';
+  const iconSize = size <= 36 ? 'text-[15px]' : 'text-[20px]';
 
   /**
    * Đóng khi bấm ra ngoài — cần cho cảm ứng, nơi không có `mouseleave` nên nếu
@@ -617,8 +714,9 @@ function EmotePicker({ onPick, size = 44 }: { onPick: (emote: string) => void; s
             initial={{ opacity: 0, y: 8, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.9 }}
-            className={`absolute ${size <= 34 ? 'bottom-[40px]' : 'bottom-[52px]'} left-0 flex gap-1 rounded-2xl border p-1.5`}
-            style={{ background: 'rgba(12,4,8,.85)', borderColor: 'rgba(255,215,140,.45)' }}
+            className="absolute left-0 flex gap-1 rounded-2xl border p-1.5"
+            // Dải cảm xúc nổi ngay trên nút, bám theo cỡ nút.
+            style={{ bottom: size + 8, background: 'rgba(12,4,8,.85)', borderColor: 'rgba(255,215,140,.45)' }}
           >
             {EMOTES.map((e, idx) => (
               <button

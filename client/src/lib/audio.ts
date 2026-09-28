@@ -118,6 +118,8 @@ const SPEC: Record<Sfx, Spec> = {
   jumpIn: { f: 980, to: 520, dur: 0.16, type: 'square', gain: 0.24 },
   flip: { f: 200, to: 700, dur: 0.28, type: 'sine', gain: 0.20 },
   swap: { f: 620, to: 300, dur: 0.26, type: 'triangle', gain: 0.20 },
+  // Vỡ trận: cú nổ trầm, dài, rơi thẳng xuống đáy.
+  explode: { f: 140, to: 30, dur: 0.8, type: 'sawtooth', gain: 0.32 },
   win: { f: 523, to: 1046, dur: 0.55, type: 'triangle', gain: 0.25 },
   click: { f: 700, to: 700, dur: 0.045, type: 'sine', gain: 0.14 },
   // Đếm ngược: tiếng "tick" gọn, cao độ cố định để 5 nhịp nghe đều nhau.

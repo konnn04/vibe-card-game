@@ -2,7 +2,9 @@
 import React, { Component, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { setMusicDark } from '@/src/lib/audio';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import * as THREE from 'three';
+import { useSeatScreen, type ScreenPoint } from '@/src/state/seats';
 import { Html } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { Ban, Wifi, WifiOff } from 'lucide-react';
@@ -76,6 +78,51 @@ function CameraRig() {
  *    tích luỹ theo `dt` thật (cùng nguồn với rAF) thay vì so sánh mốc thời
  *    gian tường — không aliasing, phân bố frame bị bỏ đều hơn nhiều.
  */
+/**
+ * Chiếu vị trí 3D của từng ghế ra toạ độ màn hình và ghi vào useSeatScreen —
+ * để lớp giao diện 2D (hiệu ứng nổ, thông báo bắt lỗi, bàn tay chỉ) đặt đúng
+ * chỗ ghế thật thay vì đoán bằng công thức. Đo lại ~6 lần/giây (camera có rung
+ * nhẹ, cửa sổ có thể đổi cỡ) và chỉ ghi khi lệch quá 2px để khỏi render thừa.
+ */
+function SeatProjector() {
+  const camera = useThree((st) => st.camera);
+  const size = useThree((st) => st.size);
+  const last = useRef(0);
+  const v = useRef(new THREE.Vector3());
+  useFrame(() => {
+    const now = performance.now();
+    if (now - last.current < 160) return;
+    last.current = now;
+    const s = useMatch.getState().state;
+    const myId = useMatch.getState().myId;
+    if (!s) return;
+    const n = s.players.length;
+    const mySeat = s.players.findIndex((p) => p.id === myId);
+    const myIdx = Math.max(0, mySeat);
+    const project = (p: THREE.Vector3): ScreenPoint => {
+      v.current.copy(p).project(camera);
+      return { x: ((v.current.x + 1) / 2) * size.width, y: ((1 - v.current.y) / 2) * size.height };
+    };
+    const seats: Record<string, ScreenPoint> = {};
+    s.players.forEach((p, i) => {
+      const j = seatIndex(i, myIdx, n);
+      // Ghế mình (đang ngồi bàn): neo ngay trên quạt bài; đối thủ: chỗ thẻ tên.
+      const mine = j === 0 && mySeat >= 0;
+      const pos = seatPos(j, n, mine ? 2.45 : 3.15);
+      seats[p.id] = project(new THREE.Vector3(pos.x, mine ? 0.6 : 0.55, pos.z));
+    });
+    const center = project(new THREE.Vector3(-0.15, 0.05, 0.05));
+    const prev = useSeatScreen.getState();
+    const moved = (a: ScreenPoint | undefined, b: ScreenPoint) => !a || Math.abs(a.x - b.x) > 2 || Math.abs(a.y - b.y) > 2;
+    if (
+      moved(prev.center ?? undefined, center)
+      || Object.keys(seats).length !== Object.keys(prev.seats).length
+      || Object.entries(seats).some(([id, pt]) => moved(prev.seats[id], pt))
+    ) prev.set(seats, center);
+  });
+  return null;
+}
+
 function FpsGovernor({ hasBloom }: { hasBloom: boolean }) {
   const fpsLimit = useSettings((s) => s.fpsLimit ?? 'unlimited');
   const capped = !hasBloom && fpsLimit !== 'unlimited';
@@ -153,7 +200,11 @@ function SeatHuds() {
         const chat = chatMessages[p.id];
         return (
           <Html key={p.id} position={[pos.x, 0.55, pos.z]} center zIndexRange={[10, 0]}>
-            <div className={`seat ${active ? 'seat--turn' : ''}`} style={{ position: 'relative' }}>
+            <div
+              className={`seat ${active ? 'seat--turn' : ''}`}
+              // Vỡ trận: mờ + xám, vẫn ở chỗ cũ để cả bàn nhớ ai đã nổ.
+              style={{ position: 'relative', ...(p.eliminated ? { opacity: 0.45, filter: 'grayscale(1)' } : null) }}
+            >
               {chat && (
                 <div className="pointer-events-none absolute -top-12 left-1/2 -translate-x-1/2 z-30 whitespace-nowrap">
                   <ChatBubble message={chat.message} />
@@ -220,8 +271,10 @@ function SeatHuds() {
 
               })()}
               <div className="seat__name">
-
+                {/* Party: 🔗 đang bị Cọng xích · ✔ đã bầu Chỉ tay (không lộ bầu ai). */}
+                {(state.chain?.a === p.id || state.chain?.b === p.id) && <span className="mr-0.5">🔗</span>}
                 {p.name}
+                {state.phase === 'awaitVote' && state.vote?.votes[p.id] !== undefined && <span className="ml-0.5">✔</span>}
               </div>
               <Avatar
                 name={p.name}
@@ -230,7 +283,7 @@ function SeatHuds() {
                 size={active ? 60 : 46}
                 className="seat__avatar"
               />
-              <div className="seat__count">{p.hand.length}</div>
+              <div className="seat__count">{p.eliminated ? '💥' : p.hand.length}</div>
               {p.hand.length === 1 && <div className="seat__rush">{p.calledRush ? 'RUSH!' : '?'}</div>}
             </div>
           </Html>
@@ -448,6 +501,7 @@ function GameCanvasInner({ introActive = false }: { introActive?: boolean }) {
         <DirectionRing direction={direction} active={reverseFx} color={meta.rim} />
         <Cards paused={introActive} />
         <SeatHuds />
+        <SeatProjector />
         <CameraRig />
         <FpsGovernor hasBloom={Boolean(gfx.bloom)} />
         {gfx.bloom && (

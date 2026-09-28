@@ -19,6 +19,9 @@ const ASSETS = [
   '/card-texture/u-no-std.jpg',
   '/card-texture/u-no-flip-light.jpg',
   '/card-texture/u-no-flip-dark.jpg',
+  '/card-texture/u-no-party.jpg',
+  '/card-texture/u-no-no-mercy-part-1.jpg',
+  '/card-texture/u-no-no-mercy-part-2.jpg',
 ];
 /** Hai họ chữ dùng khắp game — phải có mặt trước khi vẽ khung hình đầu tiên. */
 const FONTS = ['700 16px "Baloo 2"', '600 16px "Barlow Semi Condensed"'];

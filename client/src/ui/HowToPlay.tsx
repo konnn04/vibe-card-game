@@ -3,46 +3,19 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { playSfx } from '@/src/lib/audio';
-import { CardPhoto, type AtlasId } from './CardPhoto';
+import { DECK_TYPES, type DeckType } from '@u-no/game-engine';
+import { CardPhoto } from './CardPhoto';
+import { modeVisual } from '@/src/modes';
 
 /**
- * HƯỚNG DẪN CHƠI — 2 tab (Ú Nồ cổ điển / Ú Nồ Flip), mỗi tab là một chuỗi
- * slide giới thiệu TỪNG LOẠI LÁ kèm ảnh bài thật.
+ * HƯỚNG DẪN CHƠI — mỗi chế độ chơi một tab, mỗi tab là một chuỗi slide giới
+ * thiệu TỪNG LOẠI LÁ kèm ảnh bài thật (danh sách slide nằm ở src/modes.ts).
  *
  * Dùng ảnh thật thay vì mô tả chữ vì người chơi cần NHẬN RA lá bài trên bàn,
  * không cần thuộc tên tiếng Anh của nó. Bộ Flip có hai mặt nên slide của nó
  * hiện SONG SONG mặt Light và mặt Dark của cùng một lá — đó đúng là điểm khó
  * hiểu nhất của bộ này.
  */
-interface Slide {
-  /** Sprite mặt chính. */
-  light: { atlas: AtlasId; name: string };
-  /** Mặt còn lại (chỉ bộ Flip) — hiện cạnh mặt Light để thấy rõ cặp đôi. */
-  dark?: { atlas: AtlasId; name: string };
-  /** Khoá i18n: tiêu đề + mô tả luật. */
-  key: string;
-}
-
-const CLASSIC: Slide[] = [
-  { key: 'number', light: { atlas: 'std', name: '7_red' } },
-  { key: 'skip', light: { atlas: 'std', name: 'skip_blue' } },
-  { key: 'reverse', light: { atlas: 'std', name: 'reverse_green' } },
-  { key: 'draw2', light: { atlas: 'std', name: 'draw_2_yellow' } },
-  { key: 'wild', light: { atlas: 'std', name: 'wild_draw' } },
-  { key: 'wild4', light: { atlas: 'std', name: 'wild_draw_4' } },
-  { key: 'back', light: { atlas: 'std', name: 'back_side' } },
-];
-
-const FLIP: Slide[] = [
-  { key: 'flipNumber', light: { atlas: 'flipLight', name: '7_red' }, dark: { atlas: 'flipDark', name: '7_pink' } },
-  { key: 'flipCard', light: { atlas: 'flipLight', name: 'flip_red' }, dark: { atlas: 'flipDark', name: 'flip_dark_pink' } },
-  { key: 'flipDraw', light: { atlas: 'flipLight', name: 'draw_1_blue' }, dark: { atlas: 'flipDark', name: 'draw_5_dark_cyan' } },
-  { key: 'flipSkip', light: { atlas: 'flipLight', name: 'skip_green' }, dark: { atlas: 'flipDark', name: 'skip_all_darkorange' } },
-  { key: 'flipReverse', light: { atlas: 'flipLight', name: 'reverse_yellow' }, dark: { atlas: 'flipDark', name: 'reverse_dark_purple' } },
-  { key: 'flipWild', light: { atlas: 'flipLight', name: 'wild_draw' }, dark: { atlas: 'flipDark', name: 'wild_dark' } },
-  { key: 'flipWildDraw', light: { atlas: 'flipLight', name: 'wild_draw_2' }, dark: { atlas: 'flipDark', name: 'draw_until_dark' } },
-];
-
 function useIsCompactHeight(): boolean {
   const [compact, setCompact] = useState(false);
   useEffect(() => {
@@ -56,10 +29,10 @@ function useIsCompactHeight(): boolean {
 
 export function HowToPlay({ onClose }: { onClose: () => void }) {
   const t = useTranslations('howto');
-  const [deck, setDeck] = useState<'classic' | 'flip'>('classic');
+  const [deck, setDeck] = useState<DeckType>('classic');
   const [i, setI] = useState(0);
   const isCompact = useIsCompactHeight();
-  const slides = deck === 'classic' ? CLASSIC : FLIP;
+  const slides = modeVisual(deck).slides;
   const slide = slides[Math.min(i, slides.length - 1)];
 
   const go = (d: number) => {
@@ -78,7 +51,7 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const renderTab = (id: 'classic' | 'flip', label: string) => (
+  const renderTab = (id: DeckType, label: string) => (
     <button
       key={id}
       className={`label rounded-[12px] ${isCompact ? 'px-3 py-1 text-[12px]' : 'px-5 py-2.5 text-[15px]'} transition-colors`}
@@ -117,8 +90,7 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
 
         <div className={`display ${isCompact ? 'mb-1.5 text-[18px]' : 'mb-4 text-[28px]'} text-[#FFD34D]`}>{t('title')}</div>
         <div className={`${isCompact ? 'mb-2' : 'mb-5'} flex gap-2`}>
-          {renderTab('classic', t('tabClassic'))}
-          {renderTab('flip', t('tabFlip'))}
+          {DECK_TYPES.map((id) => renderTab(id, t(modeVisual(id).tabKey)))}
         </div>
 
         <div className="flex items-center gap-2 sm:gap-4">

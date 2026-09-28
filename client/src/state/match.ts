@@ -177,6 +177,17 @@ function sfxSigOf(e: GameEvent): string {
     case 'rush': return `rush:${e.playerId}`;
     case 'caught': return `caught:${e.playerId}`;
     case 'challenge': return `challenge:${e.playerId}:${e.targetId}`;
+    case 'eliminated': return `eliminated:${e.playerId}`;
+    case 'voteStart': return `voteStart:${e.by}:${e.deadline}`;
+    case 'voteResult': return `voteResult:${Object.keys(e.votes).sort().join(',')}`;
+    case 'chain': return `chain:${e.a}:${e.b}`;
+    case 'chainBreak': return 'chainBreak';
+    case 'pileUpStart': return `pileUpStart:${e.cardId}`;
+    case 'pileUp': return `pileUp:${e.cardId}`;
+    case 'pileUpTake': return `pileUpTake:${e.playerId}:${e.cardIds.length}`;
+    case 'jumpFail': return `jumpFail:${e.playerId}`;
+    case 'roulette': return `roulette:${e.playerId}`;
+    case 'discardAll': return `discardAll:${e.cardIds.join(',')}`;
     case 'roundEnd': return `roundEnd:${e.winnerId}`;
     default: return '';
   }
@@ -399,6 +410,19 @@ function sfxFor(e: GameEvent, state: GameState) {
       }
       return playSfx(e.success ? 'challengeWin' : 'action');
     }
+    case 'eliminated': return playSfx('explode');
+    // Party
+    case 'voteStart': return playSfx('challenge');
+    case 'voteResult': return playSfx('penalty', 0.9);
+    case 'chain': return playSfx('swap');
+    case 'chainBreak': return playSfx('reverse');
+    case 'pileUpStart': return playSfx('playDraw4');
+    case 'pileUp': return playSfx('place');
+    case 'pileUpTake': return playSfx('penalty', 0.7);
+    case 'jumpFail': return playSfx('caught');
+    // No Mercy
+    case 'roulette': return playSfx('playDrawUntil');
+    case 'discardAll': return playSfx('whoosh');
     case 'roundEnd': return playSfx('win');
     case 'emote': return playSfx('click');
     default: return undefined;
@@ -412,12 +436,14 @@ function sfxFor(e: GameEvent, state: GameState) {
  * (danh sách id lá vừa rút), bỏ đi là hỏng hình chứ không chỉ thừa một cú nháy.
  */
 const ONESHOT_FX = new Set<GameEvent['t']>(
-  ['skip', 'skipAll', 'caught', 'flip', 'rush', 'color', 'reverse', 'rotate', 'swap', 'roundEnd', 'matchEnd', 'challenge'],
+  ['skip', 'skipAll', 'caught', 'flip', 'rush', 'color', 'reverse', 'rotate', 'swap', 'roundEnd', 'matchEnd', 'challenge', 'eliminated',
+    'voteStart', 'voteResult', 'chain', 'chainBreak', 'pileUpStart', 'pileUpTake', 'jumpFail', 'roulette', 'discardAll'],
 );
 
 function pushFx(prev: FxItem[], events: GameEvent[], state: GameState): FxItem[] {
   const now = Date.now();
-  const keep = ['play', 'rush', 'caught', 'reverse', 'skip', 'skipAll', 'flip', 'color', 'rotate', 'swap', 'roundEnd', 'matchEnd', 'draw', 'emote', 'challenge'];
+  const keep = ['play', 'rush', 'caught', 'reverse', 'skip', 'skipAll', 'flip', 'color', 'rotate', 'swap', 'roundEnd', 'matchEnd', 'draw', 'emote', 'challenge', 'eliminated',
+    'voteStart', 'voteResult', 'chain', 'chainBreak', 'pileUpStart', 'pileUp', 'pileUpTake', 'jumpFail', 'roulette', 'discardAll'];
   const add = events
     .filter((e) => keep.includes(e.t))
     .map((e) => ({
@@ -814,9 +840,17 @@ function scheduleLocalBots(get: Getter) {
     return;
   }
 
-  if (s.phase === 'awaitColor' && s.resume && s.players.find((p) => p.id === s.resume!.playerId)?.isBot) {
+  // Chọn màu Wild, hoặc (No Mercy) bot bị Color Roulette nhắm vào chọn màu.
+  if ((s.phase === 'awaitColor' || s.phase === 'awaitRoulette') && s.resume && s.players.find((p) => p.id === s.resume!.playerId)?.isBot) {
     const a = botAction(s, s.resume.playerId);
     if (a) botTimers.push(setTimeout(() => get().act(a), think(BOT.pickColor)));
+    return;
+  }
+
+  // Party — bot vừa đánh Cọng xích chọn 2 người bị xích (nhịp như chọn người đổi bài).
+  if (s.phase === 'awaitChain' && s.resume && s.players.find((p) => p.id === s.resume!.playerId)?.isBot) {
+    const a = botAction(s, s.resume.playerId);
+    if (a) botTimers.push(setTimeout(() => get().act(a), think(BOT.pickSwap)));
     return;
   }
 

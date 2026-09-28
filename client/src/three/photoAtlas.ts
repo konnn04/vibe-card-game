@@ -1,7 +1,7 @@
 'use client';
 import * as THREE from 'three';
 import { useEffect, useState } from 'react';
-import type { CardColor, CardValue, DeckType, DeckSide } from '@u-no/game-engine';
+import type { CardColor, CardValue } from '@u-no/game-engine';
 
 /**
  * Atlas ảnh thật (chụp/scan bộ bài Ú Nô thật) — thay cho atlas vẽ tay bằng Canvas.
@@ -17,12 +17,16 @@ import type { CardColor, CardValue, DeckType, DeckSide } from '@u-no/game-engine
  * `height`) làm mẫu số, không đoán/hardcode — đúng với mọi file bất kể ai
  * xuất lại JSON ở độ phân giải nào sau này.
  */
-export type AtlasVariant = 'std' | 'flipLight' | 'flipDark';
+export type AtlasVariant = 'std' | 'flipLight' | 'flipDark' | 'party' | 'noMercy1' | 'noMercy2';
 
 const SOURCES: Record<AtlasVariant, { png: string; json: string }> = {
   std: { png: '/card-texture/u-no-std.jpg', json: '/card-texture/u-no-std.json' },
   flipLight: { png: '/card-texture/u-no-flip-light.jpg', json: '/card-texture/u-no-flip-light.json' },
   flipDark: { png: '/card-texture/u-no-flip-dark.jpg', json: '/card-texture/u-no-flip-dark.json' },
+  party: { png: '/card-texture/u-no-party.jpg', json: '/card-texture/u-no-party.json' },
+  // No Mercy tách 2 ảnh: phần 1 = lá số / +2 / Cấm / Đổi chiều, phần 2 = lá riêng của No Mercy.
+  noMercy1: { png: '/card-texture/u-no-no-mercy-part-1.jpg', json: '/card-texture/u-no-no-mercy-part-1.json' },
+  noMercy2: { png: '/card-texture/u-no-no-mercy-part-2.jpg', json: '/card-texture/u-no-no-mercy-part-2.json' },
 };
 
 interface SpriteRect { x: number; y: number; w: number; h: number; name: string }
@@ -131,11 +135,14 @@ export function disposePhotoAtlases() {
 const DARK_ATLAS_COLOR: Partial<Record<CardColor, string>> = { teal: 'cyan' };
 const atlasColorName = (c: CardColor) => DARK_ATLAS_COLOR[c] ?? c;
 
-/** Atlas nào (std/flipLight/flipDark) áp dụng cho ván hiện tại + mặt hiện tại. */
-export function atlasVariantFor(deckType: DeckType, side: DeckSide): AtlasVariant {
-  if (deckType !== 'flip') return 'std';
-  return side === 'dark' ? 'flipDark' : 'flipLight';
-}
+const LIGHT_SET = new Set<CardColor>(['red', 'yellow', 'green', 'blue']);
+const DARK_SET = new Set<CardColor>(['pink', 'teal', 'orange', 'purple']);
+
+/*
+ * Lá nào lấy ảnh từ atlas nào là chuyện của từng CHẾ ĐỘ CHƠI -> xem
+ * client/src/modes.ts (MODE_VISUALS / resolveCardSprite). File này chỉ biết
+ * tải atlas và đổi (atlas, màu, trị) thành tên sprite.
+ */
 
 /**
  * Tên sprite tương ứng 1 mặt bài (color+value) trong atlas ảnh thật.
@@ -151,7 +158,8 @@ export function resolvePhotoSprite(
 ): string | null {
   if (variant === 'std') {
     if (color === 'wild') {
-      const c = chosenColor && chosenColor !== 'wild' ? chosenColor : null;
+      // Chỉ atlas có ảnh Wild đã tô cho đúng hệ màu của nó (Hỗn loạn có thể chọn chéo hệ).
+      const c = chosenColor && LIGHT_SET.has(chosenColor) ? chosenColor : null;
       if (value === 'wild') return c ? `wild_draw_${c}` : 'wild_draw';
       if (value === 'wild4') return c ? `wild_draw_4_${c}` : 'wild_draw_4';
       return null;
@@ -163,9 +171,50 @@ export function resolvePhotoSprite(
     return null;
   }
 
+  if (variant === 'noMercy1') {
+    if (/^\d$/.test(value)) return `${value}_${color}`;
+    if (value === 'draw2') return `draw_2_${color}`;
+    if (value === 'skip') return `skip_${color}`;
+    if (value === 'reverse') return `reverse_${color}`;
+    return null;
+  }
+
+  if (variant === 'noMercy2') {
+    const c = chosenColor && LIGHT_SET.has(chosenColor) ? chosenColor : null;
+    const wildName: Partial<Record<CardValue, string>> = {
+      wildRev4: 'reverse_draw_4', wild6: 'draw_6', wild10: 'draw_10', wildRoulette: 'wild_all_color_face',
+    };
+    if (color === 'wild') {
+      const base = wildName[value];
+      return base ? (c ? `${base}_${c}` : base) : null;
+    }
+    if (value === 'skipAll') return `skip_all_${color}`;
+    if (value === 'draw4') return `draw_4_${color}`;
+    if (value === 'discardAll') return `color_discard_all_${color}`;
+    return null;
+  }
+
+  if (variant === 'party') {
+    // Bộ Party: đủ lá cổ điển (có lá 0) + 3 lá độc quyền, Wild nào cũng có bản đã tô 4 màu.
+    const c = chosenColor && LIGHT_SET.has(chosenColor) ? chosenColor : null;
+    const wildName: Partial<Record<CardValue, string>> = {
+      wild: 'wild_draw', wild4: 'wild_draw_4', wildTogether: 'wild_drawn_together', wildPileUp: 'wild_pile_up',
+    };
+    if (color === 'wild') {
+      const base = wildName[value];
+      return base ? (c ? `${base}_${c}` : base) : null;
+    }
+    if (/^\d$/.test(value)) return `${value}_${color}`;
+    if (value === 'draw2') return `draw_2_${color}`;
+    if (value === 'skip') return `skip_${color}`;
+    if (value === 'reverse') return `reverse_${color}`;
+    if (value === 'pointTaken') return `point_taken_${color}`;
+    return null;
+  }
+
   if (variant === 'flipLight') {
     if (color === 'wild') {
-      const c = chosenColor && chosenColor !== 'wild' ? chosenColor : null;
+      const c = chosenColor && LIGHT_SET.has(chosenColor) ? chosenColor : null;
       if (value === 'wild') return c ? `wild_draw_${c}` : 'wild_draw';
       if (value === 'wild2') return c ? `wild_draw_2_${c}` : 'wild_draw_2';
       return null;
@@ -184,7 +233,7 @@ export function resolvePhotoSprite(
   // flipDark
   const ac = atlasColorName(color);
   if (color === 'wild') {
-    const c = chosenColor && chosenColor !== 'wild' ? atlasColorName(chosenColor) : null;
+    const c = chosenColor && DARK_SET.has(chosenColor) ? atlasColorName(chosenColor) : null;
     if (value === 'wild') return c ? `wild_dark_${c}` : 'wild_dark';
     if (value === 'wildColor') return c ? `draw_until_dark_${c}` : 'draw_until_dark';
     return null;
