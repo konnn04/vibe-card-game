@@ -226,6 +226,8 @@ export interface GameState {
     wild4Card?: Card;
   } | null;
   drawnThisTurn: boolean;    // đã rút trong lượt này (không được rút tiếp)
+  /** Người vừa đánh lá bài số gần nhất (để cho phép chồng tiếp lá cùng màu cùng số trong cùng nhịp). */
+  lastPlayedBy?: string | null;
   /**
    * No Mercy — "rút tới khi đánh được, rồi BẮT BUỘC đánh lá đó": id lá vừa rút
    * trúng. Khác null thì lượt này chỉ được đánh đúng lá này. setTurn xoá.
@@ -270,7 +272,7 @@ export interface GameState {
 }
 
 export type Action =
-  | { type: 'PLAY'; playerId: string; cardId: string; chosenColor?: CardColor }
+  | { type: 'PLAY'; playerId: string; cardId: string; chosenColor?: CardColor; combo?: boolean }
   | { type: 'DRAW'; playerId: string }
   | { type: 'PASS'; playerId: string }
   | { type: 'CHOOSE_COLOR'; playerId: string; color: CardColor }

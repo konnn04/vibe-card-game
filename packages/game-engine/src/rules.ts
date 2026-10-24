@@ -107,6 +107,34 @@ export function canJumpIn(
   return a.color !== 'wild' && a.color === b.color && a.value === b.value;
 }
 
+/**
+ * Các lá bài SỐ CÙNG MÀU VÀ CÙNG SỐ khác đang có trên tay (để trong lượt đó có
+ * thể chọn đánh lần cả 2 lá hoặc chỉ đánh 1 lá, tách biệt với Jump-In).
+ */
+export function comboCardsFor(card: Card, hand: Card[], side: DeckSide): Card[] {
+  const f = face(card, side);
+  if (f.color === 'wild' || !/^\d$/.test(f.value)) return [];
+  return hand.filter((c) => c.id !== card.id && face(c, side).color === f.color && face(c, side).value === f.value);
+}
+
+/**
+ * Đánh chồng lá giống hệt (cùng màu + cùng số) ngay sau khi chính mình vừa đánh
+ * lá đầu tiên trong lượt (kể cả khi luật Jump-In tắt), miễn chưa ai rút/đánh đè.
+ */
+export function canSameTurnStack(
+  card: Card,
+  state: Pick<GameState, 'side' | 'discard' | 'pending' | 'pileUp' | 'vote' | 'phase' | 'lastPlayedBy' | 'drawnThisTurn'>,
+  playerId: string,
+): boolean {
+  if (state.phase !== 'awaitPlay' || state.pending || state.pileUp || state.vote || state.drawnThisTurn) return false;
+  if (!playerId || state.lastPlayedBy !== playerId) return false;
+  const top = state.discard[state.discard.length - 1];
+  if (!top) return false;
+  const a = face(card, state.side);
+  const b = face(top, state.side);
+  return a.color !== 'wild' && /^\d$/.test(a.value) && a.color === b.color && a.value === b.value;
+}
+
 // Điểm cộng cho người thắng khi kết ván = tổng điểm bài còn lại trên tay người
 // thua (theo bảng điểm Ú Nô Flip chính hãng). 'wild' dùng chung 1 giá trị cho cả
 // classic lẫn Flip (chính hãng Flip-wild=40 khác classic-wild=50, nhưng gộp
@@ -136,15 +164,19 @@ export function handScore(cards: Card[], side: DeckSide, deckType: GameState['de
  * phím) và bàn 3D (để gắn nhãn [S] lên đúng lá). Tách riêng mỗi bên tự tính là
  * kiểu gì cũng có lúc nhãn chỉ một lá còn phím đánh lá khác.
  *
- * Ưu tiên ĐÁNH CHEN trước: nó có hạn chót (lá khác đè lên đỉnh đống là hết
- * cửa), còn chồng phạt thì cứ tới lượt mình là vẫn còn đó.
+ * Ưu tiên ĐÁNH CHEN / CHỒNG ĐÔI:
+ *  - Ngoài lượt: lá đánh chen (canJumpIn) hoặc chồng tiếp lá số vừa đánh (canSameTurnStack).
+ *  - Trong lượt: lá chồng phạt (pending) hoặc cặp bài cùng màu cùng số (comboCardsFor).
  */
 export function hotkeyCard(s: GameState, playerId: string): Card | null {
   if (s.phase !== 'awaitPlay' || s.drawRun) return null;
   const pi = s.players.findIndex((p) => p.id === playerId);
   if (pi < 0) return null;
   const hand = s.players[pi].hand;
-  if (s.turn !== pi) return hand.find((c) => canJumpIn(c, s)) ?? null;
+  if (s.turn !== pi) return hand.find((c) => canJumpIn(c, s) || canSameTurnStack(c, s, playerId)) ?? null;
   if (s.pending) return hand.find((c) => canPlay(c, s)) ?? null;
+  if (!s.pileUp && !s.mustPlayCardId) {
+    return hand.find((c) => canPlay(c, s) && comboCardsFor(c, hand, s.side).length > 0) ?? null;
+  }
   return null;
 }

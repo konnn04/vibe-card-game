@@ -58,6 +58,9 @@ interface MatchStore {
   dealSeq: number;
   /** Bài thật của mình (online): kênh riêng gửi về, ghép vào state đã bị che. */
   myCards: Record<string, Card>;
+  /** Lá bài đang được người chơi đưa chuột lên (dùng cho nút [S] đánh cặp & tooltip hướng dẫn). */
+  hoveredCardId: string | null;
+  setHoveredCardId(id: string | null): void;
   start(opts: { players: PlayerSeed[]; rules: Partial<Rules>; deckType: DeckType; myId: string; seed?: number }): void;
   attachOnline(code: string, hostId: string): void;
   applyRemote(update: RoomUpdate): void;
@@ -498,6 +501,10 @@ export const useMatch = create<MatchStore>((set, get) => ({
   phase: 'action',
   dealSeq: 0,
   myCards: {},
+  hoveredCardId: null,
+  setHoveredCardId(id) {
+    if (get().hoveredCardId !== id) set({ hoveredCardId: id });
+  },
 
   /** Chế độ chơi 1 mình với bot: engine chạy ngay trong tab. */
   start({ players, rules, deckType, myId, seed }) {

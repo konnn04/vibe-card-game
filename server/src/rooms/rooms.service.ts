@@ -445,10 +445,22 @@ export class RoomsService {
     // Nếu bật đổi chỗ ngẫu nhiên mỗi ván: xáo trộn vị trí người chơi trên bàn
     if (room.rules.randomizeSeats ?? true) {
       const occupiedIndices = room.seats.map((s, i) => (s ? i : -1)).filter((i) => i !== -1);
+      const prevOrder = occupiedIndices.map((idx) => room.seats[idx]!.id);
       const shuffled = [...room.seats.filter((s): s is NetSeat => !!s)];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      const n = shuffled.length;
+      if (n >= 3) {
+        const idx0 = shuffled.findIndex((s) => s.id === prevOrder[0]);
+        if (idx0 >= 0 && prevOrder.every((id, k) => shuffled[(idx0 + k) % n].id === id)) {
+          const a = (idx0 + 1) % n;
+          const b = (idx0 + 2) % n;
+          [shuffled[a], shuffled[b]] = [shuffled[b], shuffled[a]];
+        }
+      } else if (n === 2 && shuffled[0].id === prevOrder[0]) {
+        [shuffled[0], shuffled[1]] = [shuffled[1], shuffled[0]];
       }
       occupiedIndices.forEach((seatIdx, i) => {
         room.seats[seatIdx] = shuffled[i];
@@ -565,6 +577,10 @@ export class RoomsService {
         return { ok: true, events };
       }
     } else {
+      // Chặn giả mạo hành động hộ người khác từ client.
+      if ('playerId' in action && action.playerId !== playerId) {
+        return { ok: false, rejected: 'unauthorized' };
+      }
       // Người chơi tự thao tác = đang ở đây: xoá đếm AFK, và nếu máy đang giữ
       // ghế hộ (vd bị đánh dấu AFK vì để hết giờ) thì trả ghế lại ngay.
       this.markActive(room, playerId);
@@ -577,6 +593,25 @@ export class RoomsService {
     }
 
     room.game = state;
+    if (action.type === 'NEXT_ROUND') {
+      for (const p of state.players) {
+        room.scores[p.id] = p.score;
+      }
+      if (room.rules.randomizeSeats) {
+        const byId = new Map(
+          room.seats.filter((s): s is NetSeat => !!s).map((s) => [s.id, s]),
+        );
+        const occupiedIndices = room.seats
+          .map((s, i) => (s ? i : -1))
+          .filter((i) => i !== -1);
+        occupiedIndices.forEach((seatIdx, i) => {
+          const p = state.players[i];
+          if (p && byId.has(p.id)) {
+            room.seats[seatIdx] = byId.get(p.id)!;
+          }
+        });
+      }
+    }
     room.updatedAt = Date.now();
 
     this.onBroadcastRoom?.(room.code, events);

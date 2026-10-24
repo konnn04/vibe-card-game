@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
-import { canPlay, canJumpIn, face, hotkeyCard, type Card, type CardColor, type DeckSide, type GameState } from '@u-no/game-engine';
+import { canPlay, canJumpIn, canSameTurnStack, comboCardsFor, face, hotkeyCard, type Card, type CardColor, type DeckSide, type GameState } from '@u-no/game-engine';
 import { useMatch, type FxItem } from '@/src/state/match';
 import { useTurnHold } from '@/src/state/useTurnHold';
 import {
@@ -137,47 +137,165 @@ function PlayFlash({ state, fx }: { state: GameState; fx: FxItem[] }) {
   );
 }
 
+interface DrawStreakEntry {
+  total: number;
+  displayed: number;
+  updatedAt: number;
+  penalty: boolean;
+}
+
 /**
- * Hien "+N" tren dau nguoi dang bi chong phat -- suy tu state (drawRun rut tung la, moi event chi con 1 la).
+ * Hiện "+1, +2, +3, +4..." tăng dần trên đầu người đang rút bài liên tục
+ * (do phạt chồng lá, rút chưa biết trước như Draw Until / Roulette / Draw to Match,
+ * hoặc rút phạt lập tức).
  */
 function DrawTotalPopups({ state, myId, fx }: { state: GameState; myId: string; fx: FxItem[] }) {
   const n = state.players.length;
   const myIdx = Math.max(0, state.players.findIndex((p) => p.id === myId));
 
-  let amount = 0;
-  let victimId = state.players[state.turn]?.id;
+  const seenFxRef = useRef<Set<number>>(new Set());
+  const streaksRef = useRef<Map<string, DrawStreakEntry>>(new Map());
+  const roundRef = useRef<number>(state.roundNo);
+  const [, setTick] = useState(0);
 
-  if (state.pending && state.pending.value !== 'drawColor') {
-    amount = state.pending.amount;
-  } else if (state.drawRun?.penalty && state.drawRun.kind === 'fixed') {
-    amount = state.drawRun.count + (state.drawRun.remaining ?? 0);
-  } else {
-    const recentDraw = fx[fx.length - 1];
-    if (recentDraw?.payload?.t === 'draw' && recentDraw.payload.penalty) {
-      amount = recentDraw.payload.cardIds.length;
-      victimId = recentDraw.payload.playerId;
+  useEffect(() => {
+    if (roundRef.current !== state.roundNo) {
+      roundRef.current = state.roundNo;
+      seenFxRef.current.clear();
+      streaksRef.current.clear();
+      setTick((v) => v + 1);
+    }
+  }, [state.roundNo]);
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let changed = false;
+    const now = Date.now();
+
+    for (const item of fx) {
+      if (seenFxRef.current.has(item.id)) continue;
+      seenFxRef.current.add(item.id);
+      const p = item.payload;
+
+      if (p.t === 'play') {
+        if (streaksRef.current.size > 0) {
+          streaksRef.current.clear();
+          changed = true;
+        }
+        continue;
+      }
+
+      if (p.t === 'draw' || p.t === 'pileUpTake') {
+        const added = p.cardIds.length;
+        if (added <= 0) continue;
+        const pid = p.playerId;
+        const isPenalty = p.t === 'pileUpTake' ? true : p.penalty;
+        const isFast = p.t === 'pileUpTake' ? true : !!p.fast;
+        const prev = streaksRef.current.get(pid);
+        // Nếu cùng người chơi đang rút liên tiếp (trong vòng 1.6s hoặc đang drawRun) -> cộng dồn!
+        const continuing = !!prev && (now - prev.updatedAt < 1600 || !!state.drawRun);
+        const startCount = continuing ? prev.total : 0;
+        const newTotal = startCount + added;
+        const entry: DrawStreakEntry = {
+          total: newTotal,
+          displayed: startCount + 1,
+          updatedAt: now,
+          penalty: isPenalty || (continuing && prev.penalty),
+        };
+        streaksRef.current.set(pid, entry);
+        changed = true;
+
+        // Nếu 1 event rút nhiều lá cùng lúc (fast draw +2, +4, stack, v.v.):
+        // tăng dần số hiển thị +1 -> +2 -> +3 -> +4 khớp với từng lá bài bay về tay!
+        if (added > 1) {
+          const stepMs = isFast ? DRAW_FAST_STAGGER_MS : Math.min(220, DRAW_SLOW_MS);
+          for (let k = 2; k <= added; k++) {
+            const targetVal = startCount + k;
+            const t = setTimeout(() => {
+              const cur = streaksRef.current.get(pid);
+              if (cur && cur.displayed < targetVal) {
+                cur.displayed = Math.min(cur.total, targetVal);
+                cur.updatedAt = Date.now();
+                setTick((v) => v + 1);
+              }
+            }, (k - 1) * stepMs);
+            timers.push(t);
+          }
+        }
+      }
+    }
+
+    if (changed) setTick((v) => v + 1);
+
+    // Dọn popup sau khi chuỗi rút đã kết thúc hoàn toàn.
+    if (streaksRef.current.size > 0 && !state.drawRun) {
+      const cleanup = setTimeout(() => {
+        const tNow = Date.now();
+        let removed = false;
+        for (const [pid, entry] of streaksRef.current.entries()) {
+          if (tNow - entry.updatedAt >= 1150) {
+            streaksRef.current.delete(pid);
+            removed = true;
+          }
+        }
+        if (removed) setTick((v) => v + 1);
+      }, 1200);
+      timers.push(cleanup);
+    }
+
+    return () => {
+      timers.forEach(clearTimeout);
+    };
+  }, [fx, state.drawRun]);
+
+  const popups: { playerId: string; amount: number; penalty: boolean }[] = [];
+  for (const [pid, entry] of streaksRef.current.entries()) {
+    if (entry.displayed > 0) {
+      popups.push({ playerId: pid, amount: entry.displayed, penalty: entry.penalty });
     }
   }
-  if (amount <= 0 || !victimId) return null;
 
-  const victimIdx = state.players.findIndex((p) => p.id === victimId);
-  if (victimIdx < 0) return null;
-  const seatJ = seatIndex(victimIdx, myIdx, n);
-  const pos = seatPos(seatJ, n, seatJ === 0 ? 2.3 : 1.75);
+  // Khi đang có chuỗi phạt treo (chưa bấm rút) -> hiện tổng số lá phạt đang chờ trên đầu người tới lượt.
+  const turnPlayerId = state.players[state.turn]?.id;
+  if (
+    state.pending &&
+    state.pending.value !== 'drawColor' &&
+    turnPlayerId &&
+    !streaksRef.current.has(turnPlayerId)
+  ) {
+    popups.push({ playerId: turnPlayerId, amount: state.pending.amount, penalty: true });
+  }
+
+  if (popups.length === 0) return null;
 
   return (
-    <Html position={[pos.x, 0.95, pos.z]} center zIndexRange={[8, 0]} style={{ pointerEvents: 'none' }}>
-      <div
-        className="label"
-        style={{
-          fontSize: 34, fontWeight: 800, color: '#FFD34D',
-          textShadow: '0 2px 6px rgba(0,0,0,.85), 0 0 16px rgba(255,140,40,.85)',
-          animation: 'drawTotalFly 0.45s ease-out',
-        }}
-      >
-        +{amount}
-      </div>
-    </Html>
+    <>
+      {popups.map(({ playerId, amount, penalty }) => {
+        const victimIdx = state.players.findIndex((p) => p.id === playerId);
+        if (victimIdx < 0) return null;
+        const seatJ = seatIndex(victimIdx, myIdx, n);
+        const pos = seatPos(seatJ, n, seatJ === 0 ? 2.3 : 1.75);
+        return (
+          <Html key={playerId} position={[pos.x, 0.95, pos.z]} center zIndexRange={[8, 0]} style={{ pointerEvents: 'none' }}>
+            <div
+              key={`${playerId}-${amount}`}
+              className="label"
+              style={{
+                fontSize: 34,
+                fontWeight: 800,
+                color: penalty ? '#FFD34D' : '#7FE3FF',
+                textShadow: penalty
+                  ? '0 2px 6px rgba(0,0,0,.85), 0 0 16px rgba(255,140,40,.85)'
+                  : '0 2px 6px rgba(0,0,0,.85), 0 0 16px rgba(56,189,248,.85)',
+                animation: 'drawTotalFly 0.35s ease-out',
+              }}
+            >
+              +{amount}
+            </div>
+          </Html>
+        );
+      })}
+    </>
   );
 }
 
@@ -188,10 +306,10 @@ export function Cards({ paused = false }: { paused?: boolean }) {
   const fx = useMatch((s) => s.fx);
   const dealSeq = useMatch((s) => s.dealSeq);
   const act = useMatch((s) => s.act);
+  const setMatchHoveredCardId = useMatch((s) => s.setHoveredCardId);
   const graphics = useSettings((s) => s.graphics);
   const gfx = gfxOf(graphics);
   const holding = useTurnHold();
-  const sCardId = state && !holding ? hotkeyCard(state, myId)?.id : undefined;
 
   const lastRound = useRef(-1);
   const lastDeal = useRef(-1);
@@ -199,6 +317,20 @@ export function Cards({ paused = false }: { paused?: boolean }) {
   const [fontsReady, setFontsReady] = useState(false);
   const [hoveredColor, setHoveredColor] = useState<CardColor | null>(null);
   const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
+
+  const sCardId = useMemo(() => {
+    if (!state || holding) return undefined;
+    // Nếu đang hover vào 1 lá số đánh được trong lượt mà có cặp cùng màu cùng số -> ưu tiên gắn [S] cho lá đó
+    const pi = state.players.findIndex((p) => p.id === myId);
+    if (pi >= 0 && state.turn === pi && !state.pending && !state.pileUp && !state.mustPlayCardId && hoveredCardId) {
+      const hand = state.players[pi].hand;
+      const hc = hand.find((c) => c.id === hoveredCardId);
+      if (hc && canPlay(hc, state) && comboCardsFor(hc, hand, state.side).length > 0) {
+        return hc.id;
+      }
+    }
+    return hotkeyCard(state, myId)?.id;
+  }, [state, holding, myId, hoveredCardId]);
   const knownCardsByPlayer = useRef<Map<string, Set<string>>>(new Map());
 
   // Animation doi tay bai (luat 0/7) -- luu trong ref, swapTick ep re-run effect khi chuyen chang
@@ -231,9 +363,16 @@ export function Cards({ paused = false }: { paused?: boolean }) {
   const hoverClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setHoveredCardDebounced = useCallback((id: string | null) => {
     if (hoverClearTimer.current) { clearTimeout(hoverClearTimer.current); hoverClearTimer.current = null; }
-    if (id !== null) { setHoveredCardId(id); return; }
-    hoverClearTimer.current = setTimeout(() => setHoveredCardId(null), 140);
-  }, []);
+    if (id !== null) {
+      setHoveredCardId(id);
+      setMatchHoveredCardId(id);
+      return;
+    }
+    hoverClearTimer.current = setTimeout(() => {
+      setHoveredCardId(null);
+      setMatchHoveredCardId(null);
+    }, 140);
+  }, [setMatchHoveredCardId]);
   useEffect(() => () => { if (hoverClearTimer.current) clearTimeout(hoverClearTimer.current); }, []);
 
   // Debounce tat hover mau (180ms)
@@ -521,7 +660,7 @@ export function Cards({ paused = false }: { paused?: boolean }) {
 
         // Bai sang vien chi khi CO THE danh VA khong dang chay animation (holding)
         const myTurnNow = state.turn === it.ownerIdx;
-        const canJump = !myTurnNow && canJumpIn(it.card, state);
+        const canJump = !myTurnNow && (canJumpIn(it.card, state) || canSameTurnStack(it.card, state, myId));
         const playable = it.mine && state.phase === 'awaitPlay' && !holding &&
           (myTurnNow ? canPlay(it.card, state) : canJump);
 
@@ -596,17 +735,15 @@ export function Cards({ paused = false }: { paused?: boolean }) {
             spawnRot={spawnRot}
             cardColor={f.color}
             onHoverColor={it.mine ? setHoveredColorDebounced : undefined}
-            onHoverCard={it.mine ? setHoveredCardDebounced : undefined}
+            onHoverCard={it.mine || isTopDiscard ? setHoveredCardDebounced : undefined}
             onSelect={
               it.zone === 'deck'
                 ? () => act({ type: 'DRAW', playerId: myId })
                 : (id) => {
                     if (!playable) {
-                      // Party — Đánh nhanh: được thử đánh lá số ngoài lượt; sai bài
-                      // thì engine phạt rút 1 lá (đúng luật), không chỉ lắc lá.
-                      const trySpeed = state.deckType === 'party' && !myTurnNow && !holding
-                        && state.phase === 'awaitPlay' && !state.pileUp && !state.pending && /^\d$/.test(f.value);
-                      if (!trySpeed) { shake(id); playSfx('click', 0.6); return; }
+                      shake(id);
+                      playSfx('click', 0.6);
+                      return;
                     }
                     act({ type: 'PLAY', playerId: myId, cardId: id });
                   }

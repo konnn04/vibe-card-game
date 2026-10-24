@@ -72,6 +72,10 @@ interface RoomStore {
   /** Đổi giữa "chờ tới lượt vào ghế" và "chỉ xem" — dùng được cả khi đang chơi. */
   setWatchMode(watchOnly: boolean): void;
   rotateAfterRound(consecutive: Record<string, number>, protectedId: string): { out: Seat; in: Seat } | null;
+  /** Chế độ local: xáo trộn vị trí ghế ngồi khi bật `randomizeSeats`. */
+  shuffleSeats(): void;
+  /** Đồng bộ lại thứ tự ghế trong room theo thứ tự `state.players` sau khi engine xáo trộn qua ván mới. */
+  syncSeatsFromPlayers(orderedIds: string[]): void;
   reset(): void;
 }
 
@@ -277,6 +281,49 @@ export const useRoom = create<RoomStore>((set, get) => ({
     nextSeats[swap.seat] = swap.in;
     set({ seats: nextSeats, queue: [...queue.slice(1), { ...swap.out, consecutiveRounds: 0 }] });
     return { out: swap.out, in: swap.in };
+  },
+
+  shuffleSeats() {
+    const { seats, mode } = get();
+    if (mode === 'online') return;
+    const occupiedIndices = seats.map((s, i) => (s ? i : -1)).filter((i) => i !== -1);
+    if (occupiedIndices.length <= 1) return;
+    const prevOrder = occupiedIndices.map((idx) => seats[idx]!.id);
+    const shuffled = occupiedIndices.map((idx) => seats[idx]!);
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    const n = shuffled.length;
+    if (n >= 3) {
+      const idx0 = shuffled.findIndex((s) => s.id === prevOrder[0]);
+      if (idx0 >= 0 && prevOrder.every((id, k) => shuffled[(idx0 + k) % n].id === id)) {
+        const a = (idx0 + 1) % n;
+        const b = (idx0 + 2) % n;
+        [shuffled[a], shuffled[b]] = [shuffled[b], shuffled[a]];
+      }
+    } else if (n === 2 && shuffled[0].id === prevOrder[0]) {
+      [shuffled[0], shuffled[1]] = [shuffled[1], shuffled[0]];
+    }
+    const nextSeats = seats.slice();
+    occupiedIndices.forEach((seatIdx, i) => {
+      nextSeats[seatIdx] = shuffled[i];
+    });
+    set({ seats: nextSeats });
+  },
+
+  syncSeatsFromPlayers(orderedIds) {
+    const { seats, mode } = get();
+    if (mode === 'online') return;
+    const byId = new Map(seats.filter((s): s is Seat => !!s).map((s) => [s.id, s]));
+    const occupiedIndices = seats.map((s, i) => (s ? i : -1)).filter((i) => i !== -1);
+    if (occupiedIndices.length !== orderedIds.length) return;
+    const nextSeats = seats.slice();
+    occupiedIndices.forEach((seatIdx, i) => {
+      const s = byId.get(orderedIds[i]);
+      if (s) nextSeats[seatIdx] = s;
+    });
+    set({ seats: nextSeats });
   },
 
   reset: () =>

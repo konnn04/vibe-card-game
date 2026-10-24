@@ -180,25 +180,34 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
 
   const bench = queue.filter((q) => !state.players.some((p) => p.id === q.id));
   const ranked = [
-    ...state.players.map((p) => ({
-      id: p.id,
-      name: p.name,
-      score: p.score,
-      gain: state.lastScores[p.id] ?? 0,
-      cards: p.hand.length,
-      seated: true,
-    })),
+    ...state.players.map((p) => {
+      const isWinner = p.id === state.winnerId || (state.rules.teamMode && !!winner && p.team === winner.team);
+      return {
+        id: p.id,
+        name: p.name,
+        score: p.score,
+        gain: state.lastScores[p.id] ?? 0,
+        cards: p.hand.length,
+        eliminated: !!p.eliminated,
+        isWinner,
+        seated: true,
+      };
+    }),
     ...bench.map((q) => ({
       id: q.id,
       name: q.name,
       score: roomScores[q.id] ?? 0,
       gain: 0,
       cards: 0,
+      eliminated: false,
+      isWinner: false,
       seated: false,
     })),
   ].sort(
     (a, b) =>
-      (b.id === state.winnerId ? 1 : 0) - (a.id === state.winnerId ? 1 : 0) || b.score - a.score,
+      (b.isWinner ? 1 : 0) - (a.isWinner ? 1 : 0) ||
+      (a.eliminated ? 1 : 0) - (b.eliminated ? 1 : 0) ||
+      b.score - a.score,
   );
 
   // Ghế AFK (người thật đang bị máy giữ hộ) và ghế bị kick giữa ván (kể cả bot)
@@ -288,8 +297,14 @@ export function RoundOverlay({ onNext, onExit }: { onNext: () => void; onExit: (
                 <div className={`display truncate leading-tight ${c ? 'text-[13px]' : 'text-[18px]'}`} style={{ color: first ? '#2A1508' : '#F3ECFA' }}>
                   {p.name}
                 </div>
-                <div className={`label leading-tight ${c ? 'text-[9px]' : 'text-[11px]'}`} style={{ color: first ? '#6A3A12' : '#A48AC8' }}>
-                  {!p.seated ? t('spectating') : p.cards === 0 ? t('emptyHand') : t('handLeft', { n: p.cards })}
+                <div className={`label leading-tight ${c ? 'text-[9px]' : 'text-[11px]'}`} style={{ color: first ? '#6A3A12' : p.eliminated ? '#FCA5A5' : '#A48AC8' }}>
+                  {!p.seated
+                    ? t('spectating')
+                    : p.eliminated
+                      ? `💥 ${t('eliminatedStatus')}`
+                      : p.isWinner
+                        ? (p.cards === 0 ? t('emptyHand') : t('survivorWin', { n: p.cards }))
+                        : t('handLeft', { n: p.cards })}
                 </div>
               </div>
               <div className="text-right">

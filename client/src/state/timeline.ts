@@ -95,8 +95,8 @@ export const EXPLODE_MS = 1500;
 export const VOTE_START_MS = 700;
 /** Lộ kết quả bình chọn trước khi bài phạt bay. */
 export const VOTE_REVEAL_MS = 1600;
-/** Cọng xích nối 2 người. */
-export const CHAIN_MS = 1100;
+/** Cọng xích nối 2 người (hiện 1.8s giữa màn hình rồi ẩn). */
+export const CHAIN_MS = 1800;
 /** Xích đứt. */
 export const CHAIN_BREAK_MS = 600;
 /** Lật lá mồi của chồng phụ 3 lá con. */
@@ -199,16 +199,26 @@ export function splitFrames(prev: GameState | null, state: GameState, events: Ga
   if (events[0].t === 'challenge') {
     const headEvents = [events[0]];
     const tailEvents = events.slice(1);
-    const drawnPlayerIds = new Set(tailEvents.filter((e) => e.t === 'draw').map((e) => e.playerId));
-    let headState: GameState = { ...state, turn: prev.turn };
-    if (drawnPlayerIds.size > 0 && prev) {
+    const affectedIds = new Set(
+      tailEvents
+        .filter((e): e is Extract<GameEvent, { playerId: string }> => e.t === 'draw' || e.t === 'eliminated')
+        .map((e) => e.playerId),
+    );
+    const endsInTail = tailEvents.some((e) => e.t === 'roundEnd' || e.t === 'matchEnd');
+    let headState: GameState = {
+      ...state,
+      turn: prev.turn,
+      phase: endsInTail ? prev.phase : state.phase,
+      winnerId: endsInTail ? prev.winnerId : state.winnerId,
+    };
+    if (affectedIds.size > 0 && prev) {
       headState = {
         ...headState,
         drawPile: prev.drawPile,
         players: headState.players.map((p) => {
-          if (!drawnPlayerIds.has(p.id)) return p;
+          if (!affectedIds.has(p.id)) return p;
           const prevP = prev.players.find((x) => x.id === p.id);
-          return prevP ? { ...p, hand: prevP.hand } : p;
+          return prevP ? { ...p, hand: prevP.hand, eliminated: prevP.eliminated } : p;
         }),
       };
     }
@@ -224,19 +234,29 @@ export function splitFrames(prev: GameState | null, state: GameState, events: Ga
   const headEvents = events.slice(0, cut);
   const tailEvents = events.slice(cut);
 
-  // Nếu phần sau (tail) có event 'draw' (vd đánh lá +4 phạt người sau):
-  // Trong frame đầu (head), nạn nhân CHƯA ĐƯỢC nhận các lá bài đó vào tay,
-  // nếu không thì bài sẽ tự xuất hiện trong tay nạn nhân ngay lúc lá bài vừa đánh ra!
-  const drawnPlayerIds = new Set(tailEvents.filter((e) => e.t === 'draw').map((e) => e.playerId));
-  let headState: GameState = { ...state, turn: prev.turn };
-  if (drawnPlayerIds.size > 0 && prev) {
+  // Nếu phần sau (tail) có event 'draw' hoặc 'eliminated' (vd đánh lá +4 phạt người sau nổ tung):
+  // Trong frame đầu (head), nạn nhân CHƯA ĐƯỢC nhận các lá bài đó vào tay và chưa nổ,
+  // cũng như chưa chuyển sang roundEnd cho tới khi frame tail thực sự chạy.
+  const affectedIds = new Set(
+    tailEvents
+      .filter((e): e is Extract<GameEvent, { playerId: string }> => e.t === 'draw' || e.t === 'eliminated')
+      .map((e) => e.playerId),
+  );
+  const endsInTail = tailEvents.some((e) => e.t === 'roundEnd' || e.t === 'matchEnd');
+  let headState: GameState = {
+    ...state,
+    turn: prev.turn,
+    phase: endsInTail ? prev.phase : state.phase,
+    winnerId: endsInTail ? prev.winnerId : state.winnerId,
+  };
+  if (affectedIds.size > 0 && prev) {
     headState = {
       ...headState,
       drawPile: prev.drawPile,
       players: headState.players.map((p) => {
-        if (!drawnPlayerIds.has(p.id)) return p;
+        if (!affectedIds.has(p.id)) return p;
         const prevP = prev.players.find((x) => x.id === p.id);
-        return prevP ? { ...p, hand: prevP.hand } : p;
+        return prevP ? { ...p, hand: prevP.hand, eliminated: prevP.eliminated } : p;
       }),
     };
   }

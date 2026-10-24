@@ -1,5 +1,5 @@
 import type { Action, CardColor, GameState } from './types';
-import { canJumpIn, canPlay } from './rules';
+import { canJumpIn, canPlay, comboCardsFor } from './rules';
 import { face } from './palette';
 import { colorsFor } from './modes';
 import { autoChainTargets } from './engine';
@@ -100,11 +100,13 @@ export function botAction(s: GameState, playerId: string): Action | null {
     .map((c) => ({ c, w: weight(face(c, s.side).value) + rnd() * 8 }))
     .sort((a, b) => b.w - a.w)[0].c;
   const f = face(pick, s.side);
+  const canCombo = !s.pending && !s.pileUp && !s.mustPlayCardId && comboCardsFor(pick, me.hand, s.side).length > 0;
   return {
     type: 'PLAY',
     playerId,
     cardId: pick.id,
     chosenColor: f.color === 'wild' ? bestColor(s, playerId, pick) : undefined,
+    combo: canCombo ? rnd() < 0.75 : undefined,
   };
 }
 

@@ -221,6 +221,122 @@ function VoteReveal({ tally, names }: { tally: Record<string, number>; names: Re
   );
 }
 
+/**
+ * Party — hiệu ứng Cọng xích (Drawn Together):
+ * Hai bảng tên người chơi lao vào giữa màn hình và bị khoá chặt bởi dây xích
+ * kim loại phát sáng ở giữa trong ~1.8s rồi tự ẩn đi.
+ */
+function ChainMoment({ aName, bName }: { aName: string; bName: string }) {
+  const t = useTranslations('game');
+  return (
+    <motion.div
+      className="pointer-events-none absolute inset-0 z-30 grid place-items-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: [0, 1, 1, 0] }}
+      transition={{ duration: 1.8, times: [0, 0.14, 0.84, 1] }}
+    >
+      <div className="flex flex-col items-center px-4">
+        <motion.div
+          className="display mb-3 text-center text-2xl font-black uppercase tracking-wider sm:text-4xl"
+          style={{ color: '#7FE3FF', textShadow: '0 4px 16px rgba(0,0,0,0.9), 0 0 28px rgba(127,227,255,0.85)' }}
+          initial={{ y: -16, scale: 0.7 }}
+          animate={{ y: 0, scale: [0.7, 1.12, 1] }}
+          transition={{ duration: 0.4 }}
+        >
+          🔗 {t('chainFx')}
+        </motion.div>
+
+        <div className="relative flex items-center justify-center">
+          {/* Quầng sáng giật ở tâm khi xích khoá lại */}
+          <motion.div
+            className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{
+              width: 140,
+              height: 140,
+              background: 'radial-gradient(circle, rgba(127,227,255,0.85) 0%, rgba(56,189,248,0.25) 50%, transparent 72%)',
+            }}
+            initial={{ scale: 0.2, opacity: 0 }}
+            animate={{ scale: [0.2, 1.5, 1.1], opacity: [0, 1, 0] }}
+            transition={{ duration: 0.7, delay: 0.18 }}
+          />
+
+          {/* Tên người thứ nhất */}
+          <motion.div
+            className="relative z-10 flex items-center gap-2 rounded-2xl border-2 px-4 py-2.5 shadow-2xl backdrop-blur-md sm:px-5 sm:py-3"
+            style={{
+              background: 'linear-gradient(135deg, rgba(15,28,46,0.94), rgba(8,16,28,0.96))',
+              borderColor: '#7FE3FF',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.8), 0 0 20px rgba(127,227,255,0.45)',
+            }}
+            initial={{ x: -90, scale: 0.8, rotate: -6 }}
+            animate={{ x: [-90, 6, 0], scale: [0.8, 1.06, 1], rotate: [-6, 2, 0] }}
+            transition={{ duration: 0.42, times: [0, 0.7, 1], ease: 'easeOut' }}
+          >
+            <span className="display max-w-[130px] truncate text-base font-extrabold text-[#FFF3DA] sm:max-w-[180px] sm:text-xl">
+              {aName}
+            </span>
+            <span className="h-3.5 w-3.5 rounded-full border-2 border-[#7FE3FF] bg-[#0B1728] shadow-inner" />
+          </motion.div>
+
+          {/* Dây xích nối giữa 2 tên */}
+          <motion.div
+            className="relative z-20 -mx-2 flex items-center justify-center sm:-mx-2.5"
+            initial={{ scaleX: 0.2, opacity: 0 }}
+            animate={{ scaleX: [0.2, 1.18, 0.95, 1], opacity: 1 }}
+            transition={{ duration: 0.48, delay: 0.1, times: [0, 0.55, 0.8, 1] }}
+          >
+            <svg
+              width="124"
+              height="48"
+              viewBox="0 0 124 48"
+              className="w-[96px] sm:w-[124px] overflow-visible"
+              style={{ filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.85)) drop-shadow(0 0 12px rgba(127,227,255,0.75))' }}
+            >
+              <defs>
+                <linearGradient id="chainLinkGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#E0F7FF" />
+                  <stop offset="50%" stopColor="#7FE3FF" />
+                  <stop offset="100%" stopColor="#0284C7" />
+                </linearGradient>
+              </defs>
+              {/* Mắt xích 1 (trái) */}
+              <rect x="4" y="15" width="32" height="18" rx="9" fill="none" stroke="url(#chainLinkGrad)" strokeWidth="5" />
+              {/* Mắt xích 2 (nghiêng nối giữa trái) */}
+              <line x1="28" y1="24" x2="54" y2="24" stroke="#E0F7FF" strokeWidth="6" strokeLinecap="round" />
+              {/* Mắt xích 3 (trung tâm) */}
+              <rect x="44" y="13" width="36" height="22" rx="11" fill="rgba(8,20,38,0.9)" stroke="url(#chainLinkGrad)" strokeWidth="5.5" />
+              {/* Mắt xích 4 (nghiêng nối giữa phải) */}
+              <line x1="70" y1="24" x2="96" y2="24" stroke="#E0F7FF" strokeWidth="6" strokeLinecap="round" />
+              {/* Mắt xích 5 (phải) */}
+              <rect x="88" y="15" width="32" height="18" rx="9" fill="none" stroke="url(#chainLinkGrad)" strokeWidth="5" />
+              {/* Chốt khoá sáng ở tâm */}
+              <circle cx="62" cy="24" r="5" fill="#FFD34D" />
+            </svg>
+          </motion.div>
+
+          {/* Tên người thứ hai */}
+          <motion.div
+            className="relative z-10 flex items-center gap-2 rounded-2xl border-2 px-4 py-2.5 shadow-2xl backdrop-blur-md sm:px-5 sm:py-3"
+            style={{
+              background: 'linear-gradient(135deg, rgba(15,28,46,0.94), rgba(8,16,28,0.96))',
+              borderColor: '#7FE3FF',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.8), 0 0 20px rgba(127,227,255,0.45)',
+            }}
+            initial={{ x: 90, scale: 0.8, rotate: 6 }}
+            animate={{ x: [90, -6, 0], scale: [0.8, 1.06, 1], rotate: [6, -2, 0] }}
+            transition={{ duration: 0.42, times: [0, 0.7, 1], ease: 'easeOut' }}
+          >
+            <span className="h-3.5 w-3.5 rounded-full border-2 border-[#7FE3FF] bg-[#0B1728] shadow-inner" />
+            <span className="display max-w-[130px] truncate text-base font-extrabold text-[#FFF3DA] sm:max-w-[180px] sm:text-xl">
+              {bName}
+            </span>
+          </motion.div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 function Burst({ text, sub, color }: { text: string; sub?: string; color: string }) {
   return (
     <motion.div
@@ -548,6 +664,16 @@ export function Fx() {
   const explodeFx = fx.slice().reverse().find((f) => f.kind === 'eliminated');
   const explodeEvent = explodeFx?.payload.t === 'eliminated' ? explodeFx.payload : null;
 
+  // Luật 0-7: hiện thông báo "Đổi bài!" NGAY KHI đánh lá 0 hoặc 7 ra bàn (trước khi
+  // chọn người đổi bài), và không cần ghi đổi cho ai vì người chơi nhìn thấy qua animation.
+  const sevenZeroPlayFx = fx.slice().reverse().find((f) => {
+    if (f.payload.t !== 'play' || !f.payload.playerId || !state?.rules.sevenZero) return false;
+    const c = state.discard.find((x) => x.id === (f.payload as { cardId: string }).cardId);
+    if (!c) return false;
+    const v = face(c, state.playedSide?.[c.id] ?? state.side).value;
+    return v === '0' || v === '7';
+  });
+
   return (
     <div className="pointer-events-none absolute inset-0">
       <AnimatePresence>
@@ -592,7 +718,11 @@ export function Fx() {
           />
         )}
         {chainFx?.payload.t === 'chain' && (
-          <Flash key={chainFx.id} text={t('chainFx')} sub={`${nameOf(chainFx.payload.a)} 🔗 ${nameOf(chainFx.payload.b)}`} color="#7FE3FF" ms={1100} />
+          <ChainMoment
+            key={chainFx.id}
+            aName={nameOf(chainFx.payload.a)}
+            bName={nameOf(chainFx.payload.b)}
+          />
         )}
         {chainBreakFx && <Flash key={chainBreakFx.id} text={t('chainBreakFx')} color="#FFF3DA" ms={700} />}
         {pileStartFx?.payload.t === 'pileUpStart' && (
@@ -614,20 +744,9 @@ export function Fx() {
         <ImpactFx fx={fx} />
         {last?.kind === 'caught' && <Burst key={last.id} text="+2!" color="#E23B2E" />}
         {last?.kind === 'skip' && <Burst key={last.id} text="SKIP" color="#FFF3DA" />}
-        {/* Luật 0-7: báo cả bàn đang đổi bài (lá 7 đổi 2 người, lá 0 chuyền cả bàn). */}
-        {last?.payload.t === 'swap' && (
-          <Burst
-            key={last.id}
-            text={t('swapHands')}
-            sub={t('swapHandsSub', {
-              a: state?.players.find((p) => p.id === (last.payload as { a: string }).a)?.name ?? '',
-              b: state?.players.find((p) => p.id === (last.payload as { b: string }).b)?.name ?? '',
-            })}
-            color="#7FE3FF"
-          />
-        )}
-        {last?.payload.t === 'rotate' && (
-          <Burst key={last.id} text={t('swapHands')} sub={t('rotateHandsSub')} color="#7FE3FF" />
+        {/* Luật 0-7: hiện thông báo đổi bài ngay lúc đánh lá 0 hoặc 7 (không báo tên người đổi). */}
+        {sevenZeroPlayFx && !roundOver && (
+          <Flash key={`sz-${sevenZeroPlayFx.id}`} text={t('swapHands')} color="#7FE3FF" ms={1050} />
         )}
         {last?.kind === 'flip' && (
           <motion.div

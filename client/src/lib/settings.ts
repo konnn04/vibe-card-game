@@ -31,6 +31,8 @@ export interface SettingsState {
    * PHÒNG mới là chủ đề của ván — xem useRoom.bgTheme.
    */
   bgTheme: BgTheme;
+  /** Bật hướng dẫn lá bài: hover lên bài quá 2 giây sẽ hiện khung giải thích lá bài theo luật ván. */
+  cardGuide: boolean;
   set: <K extends keyof SettingsState>(k: K, v: SettingsState[K]) => void;
 }
 
@@ -61,11 +63,12 @@ export const useSettings = create<SettingsState>()(
       avatarPreset: 0,
       avatarUrl: null,
       bgTheme: DEFAULT_THEME,
+      cardGuide: true,
       set: (k, v) => set({ [k]: v } as Partial<SettingsState>),
     }),
     {
       name: 'rush.settings',
-      version: 6,
+      version: 7,
       migrate: (persisted, from) => {
         let s = persisted as Partial<SettingsState> & { cardSkin?: unknown; tableSkin?: unknown };
         // v1 mặc định 'high' -> nặng trên máy yếu; hạ 1 lần, người dùng vẫn tự chọn lại được
@@ -86,6 +89,9 @@ export const useSettings = create<SettingsState>()(
           const old = s.tableSkin;
           s = { ...s, bgTheme: isBgTheme(old) ? old : DEFAULT_THEME };
           delete s.tableSkin;
+        }
+        if (from < 7 && s.cardGuide === undefined) {
+          s = { ...s, cardGuide: true };
         }
         return s as SettingsState;
       },

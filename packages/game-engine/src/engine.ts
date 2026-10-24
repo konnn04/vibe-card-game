@@ -3,7 +3,7 @@ import type {
 } from './types';
 import { LIGHT_TO_DARK } from './deck';
 import { mulberry32, shuffle } from './rng';
-import { DEFAULT_RULES, canJumpIn, canPlay, handScore, isWildValue, pendingKey } from './rules';
+import { DEFAULT_RULES, canJumpIn, canPlay, canSameTurnStack, comboCardsFor, handScore, isWildValue, pendingKey } from './rules';
 import { face } from './palette';
 import { baseRulesFor, buildDeck, colorsFor, getMode } from './modes';
 
@@ -72,12 +72,45 @@ export function createGame(opts: CreateGameOpts): EngineResult {
   return startRound(emptyState(opts), opts.seed, opts.now ?? Date.now());
 }
 
+/**
+ * Xáo trộn thứ tự chỗ ngồi khi qua ván mới (`randomizeSeats`).
+ * Đảm bảo thứ tự vòng tròn quanh bàn thực sự thay đổi (tránh phép dịch vòng
+ * khiến vị trí tương đối quanh bàn của các đối thủ giữ nguyên như ván cũ).
+ */
+function shuffleSeatsForNextRound(players: PlayerState[], rng: () => number): PlayerState[] {
+  const n = players.length;
+  if (n <= 1) return players.slice();
+  if (n === 2) return [players[1], players[0]];
+  const next = shuffle(players, rng);
+  const p0 = players[0].id;
+  const idx0 = next.findIndex((p) => p.id === p0);
+  let sameCircle = idx0 >= 0;
+  if (sameCircle) {
+    for (let k = 1; k < n; k++) {
+      if (next[(idx0 + k) % n].id !== players[k].id) {
+        sameCircle = false;
+        break;
+      }
+    }
+  }
+  if (sameCircle) {
+    const a = (idx0 + 1) % n;
+    const b = (idx0 + 2) % n;
+    [next[a], next[b]] = [next[b], next[a]];
+  }
+  return next;
+}
+
 export function startRound(prev: GameState, seed: number, now = Date.now()): EngineResult {
+  const orderedPlayers =
+    prev.roundNo >= 1 && prev.rules.randomizeSeats
+      ? shuffleSeatsForNextRound(prev.players, mulberry32(seed ^ 0x7a3b91))
+      : prev.players;
   const s: GameState = {
     ...prev,
     seed,
     side: 'light',
-    drawPile: buildDeck(prev.deckType, seed),
+    drawPile: buildDeck(prev.deckType, seed, prev.players.length),
     discard: [],
     pending: null,
     vote: null,
@@ -86,6 +119,7 @@ export function startRound(prev: GameState, seed: number, now = Date.now()): Eng
     resume: null,
     direction: 1,
     drawnThisTurn: false,
+    lastPlayedBy: null,
     drawRun: null,
     rushWindow: null,
     winnerId: null,
@@ -94,7 +128,13 @@ export function startRound(prev: GameState, seed: number, now = Date.now()): Eng
     wildColors: {}, playedSide: {}, // ván mới -> id lá đánh số lại, màu Wild ván trước không còn ý nghĩa
     roundNo: prev.roundNo + 1,
     phase: 'dealing',
-    players: prev.players.map((p) => ({ ...p, hand: [], calledRush: false, eliminated: false })),
+    players: orderedPlayers.map((p, i) => ({
+      ...p,
+      team: (i % 2) as 0 | 1,
+      hand: [],
+      calledRush: false,
+      eliminated: false,
+    })),
   };
   const events: GameEvent[] = [];
   // chia bài vòng tròn từng lá một (khớp animation "chia bài thật")
@@ -249,6 +289,10 @@ function checkEliminate(s: GameState, playerIdx: number, events: GameEvent[]): b
   p.eliminated = true;
   p.calledRush = false;
   if (s.rushWindow?.playerId === p.id) s.rushWindow = null;
+  if (s.chain && (s.chain.a === p.id || s.chain.b === p.id)) {
+    s.chain = null;
+    events.push({ t: 'chainBreak' });
+  }
   events.push({ t: 'eliminated', playerId: p.id, cards });
   return true;
 }
@@ -320,8 +364,8 @@ export const VOTE_MS = 6000;
 export const VOTE_MAX_DRAW = 5;
 /** Màn lộ kết quả bình chọn trước khi bài phạt bay. */
 const VOTE_REVEAL_MS = 1600;
-/** Cọng xích nối 2 người. */
-const CHAIN_ANIM_MS = 1100;
+/** Cọng xích nối 2 người (hiện 1.8s giữa màn hình rồi ẩn). */
+const CHAIN_ANIM_MS = 1800;
 /** No Mercy — màu Roulette vừa chọn hiện lên trước khi bắt đầu lật bài. */
 const COLOR_PICK_MS = 700;
 /** Mở chồng phụ 3 lá con (lật lá mồi) / ôm cả chồng phụ về tay. */
@@ -406,6 +450,11 @@ function drawStep(s: GameState, pi: number, now: number, events: GameEvent[]): E
   // xem từng lá mới biết dừng chưa -> chậm, có nhịp nghỉ.
   const card = give(s, pi, 1, run.penalty, events, run.kind === 'fixed')[0];
   run.count++;
+
+  // Nếu Cọng xích kéo người khác nổ tung và chỉ còn 1 người sống sót -> chốt ván ngay.
+  if (settleEliminations(s, events)) {
+    return { state: s, events };
+  }
 
   // Vỡ trận giữa chuỗi rút -> dừng chuỗi, lượt sang người kế (hoặc kết ván).
   if (s.players[pi].eliminated) {
@@ -816,13 +865,26 @@ function applyEffect(s: GameState, playerIdx: number, card: Card, now: number, e
 export function reduce(prev: GameState, action: Action, now = Date.now()): EngineResult {
   const r = reduceCore(prev, action, now);
   const s = r.state;
-  // CHỐT CHUNG cho vỡ trận: người đang giữ lượt có thể bị loại gián tiếp (Cọng
-  // xích kéo theo khi NGƯỜI KHÁC rút bài). Vá từng đường dễ sót, nên sau mọi
-  // nước đi: lượt đang nằm ở người đã bị loại thì chuyển sang người kế tiếp.
-  if (s !== prev && s.phase === 'awaitPlay' && s.players[s.turn]?.eliminated) {
-    // Người bị loại đang gánh chuỗi phạt treo -> xoá phạt, không đẩy sang ai.
-    s.pending = null;
-    setTurn(s, step(s, s.turn), now, r.events, DRAW_STEP_MS, 'effect');
+  if (s !== prev) {
+    // Chốt chặn toàn cục: nếu sau bất kỳ hành động nào chỉ còn <= 1 người sống sót,
+    // kết thúc ván ngay lập tức (tránh treo game khi người cuối bị loại qua xích/bắt lỗi).
+    if (settleEliminations(s, r.events)) {
+      return r;
+    }
+    // Nếu đang ở vòng bình chọn mà người chưa bầu vừa bị loại -> đủ phiếu của người sống thì chốt luôn.
+    if (s.phase === 'awaitVote' && s.vote && s.players.every((p) => p.eliminated || s.vote!.votes[p.id])) {
+      resolveVote(s, now, r.events);
+      if (settleEliminations(s, r.events)) return r;
+    }
+    // CHỐT CHUNG cho vỡ trận: người đang giữ lượt có thể bị loại gián tiếp (Cọng
+    // xích kéo theo khi NGƯỜI KHÁC rút bài). Vá từng đường dễ sót, nên sau mọi
+    // nước đi: lượt đang nằm ở người đã bị loại thì chuyển sang người kế tiếp.
+    if (s.phase === 'awaitPlay' && s.players[s.turn]?.eliminated) {
+      // Người bị loại đang gánh chuỗi phạt treo -> xoá phạt, không đẩy sang ai.
+      s.pending = null;
+      s.drawRun = null;
+      setTurn(s, step(s, s.turn), now, r.events, DRAW_STEP_MS, 'effect');
+    }
   }
   return r;
 }
@@ -855,23 +917,25 @@ function reduceCore(prev: GameState, action: Action, now: number): EngineResult 
 
       const myTurn = s.turn === pi;
       const jump = !myTurn && canJumpIn(card, s);
-      if (!myTurn && !jump) {
+      const sameTurnStack = !myTurn && !jump && canSameTurnStack(card, s, action.playerId);
+      if (!myTurn && !jump && !sameTurnStack) {
         // PARTY — Đánh nhanh SAI (lá số không giống hệt lá trên đỉnh): phạt rút,
         // lượt vẫn của người cũ. Chỉ phạt khi bàn đang mở cho đánh nhanh (không
         // giữa animation, vòng phụ, bình chọn, chồng phạt) để không phạt oan cú bấm lỡ.
         const penalty = getMode(s.deckType).jumpInPenalty;
         const openForJump = s.rules.jumpIn && !s.pending && !s.pileUp && !s.vote && now >= s.turnHoldUntil;
         if (penalty > 0 && openForJump && /^\d$/.test(face(card, s.side).value)) {
-          give(s, pi, penalty, true, events, true);
+          give(s, pi, penalty, true, events, true, false);
           events.push({ t: 'jumpFail', playerId: action.playerId, amount: penalty });
+          settleEliminations(s, events);
           return { state: s, events };
         }
         return reject(prev, action.playerId, 'not-your-turn');
       }
       if (myTurn && !canPlay(card, s)) return reject(prev, action.playerId, 'illegal-card');
 
-      // jump-in: cướp lượt về người đánh chen
-      if (jump) s.turn = pi;
+      // jump-in hoặc chồng tiếp lá số cùng màu cùng số vừa đánh: giữ lượt ở người đánh
+      if (jump || sameTurnStack) s.turn = pi;
       // Khi lượt này đánh bài: nếu lượt trước có ai chưa bị bắt Ú Nồ, họ an toàn
       if (s.rushWindow) {
         if (s.rushWindow.playerId !== s.players[pi].id) {
@@ -923,15 +987,33 @@ function reduceCore(prev: GameState, action: Action, now: number): EngineResult 
         }
       }
 
+      // ĐÁNH STACK CẶP TRONG LƯỢT: nếu người chơi chọn đánh lần cả 2 (hoặc nhiều) lá
+      // cùng màu cùng số trên tay trong lượt của mình (action.combo = true).
+      if (action.combo && myTurn && !s.pending && !s.pileUp && !s.mustPlayCardId && /^\d$/.test(f.value)) {
+        const twins = comboCardsFor(card, s.players[pi].hand, s.side);
+        if (twins.length) {
+          const twinIds = new Set(twins.map((c) => c.id));
+          s.players[pi].hand = s.players[pi].hand.filter((c) => !twinIds.has(c.id));
+          s.discard.splice(s.discard.length - 1, 0, ...twins);
+          for (const c of twins) s.playedSide[c.id] = s.side;
+          events.push({ t: 'discardAll', playerId: action.playerId, cardIds: twins.map((c) => c.id) });
+          award(s, action.playerId, twins.length * ACTION_POINTS.play);
+        }
+      }
+
+      // Ghi nhận người vừa đánh lá số thường (không kích hoạt đổi bài 0/7) để cho phép
+      // đánh chồng lá cùng màu cùng số tiếp theo nếu họ đánh lẻ từng lá.
+      const triggersSevenZero = s.rules.sevenZero && (f.value === '0' || f.value === '7');
+      s.lastPlayedBy = /^\d$/.test(f.value) && !triggersSevenZero ? action.playerId : null;
+
       // BẮT LỖI WILD +N: luật chuẩn chỉ cho đánh Wild Draw khi trên tay KHÔNG
       // còn lá nào đúng màu đang hiệu lực. Phải chốt NGAY ĐÂY vì đây là thời
       // điểm duy nhất còn đủ dữ kiện: lá vừa bị splice khỏi tay, và `activeColor`
       // vẫn là màu CŨ (lá wild chưa đổi màu — việc đó xảy ra ở CHOOSE_COLOR).
-      // Đang CHỒNG PHẠT (pending) thì lá đúng màu không đánh được (canPlay chặn),
-      // Wild +N là nước hợp lệ duy nhất -> không bao giờ tính là sai luật.
-      // LỖI CŨ: chồng +4 lên +2 đỏ mà trên tay còn lá đỏ là bị bắt lỗi oan.
+      // Kể cả khi đang có pending (vd ở UNO Party chồng +4 lên +2/+4), nếu trên
+      // tay người đánh vẫn còn lá trùng màu activeColor thì khi bị Challenge vẫn tính là phạm luật.
       const isWildDraw = f.value === 'wild4' || f.value === 'wild2';
-      const matchingCard = isWildDraw && !s.pending
+      const matchingCard = isWildDraw
         ? s.players[pi].hand.find((c) => face(c, s.side).color === s.activeColor)
         : undefined;
       const wild4Illegal = isWildDraw && !!matchingCard;
@@ -1079,6 +1161,7 @@ function reduceCore(prev: GameState, action: Action, now: number): EngineResult 
     case 'DRAW': {
       const pi = idx(s, action.playerId);
       if (pi < 0 || s.turn !== pi || s.phase !== 'awaitPlay') return reject(prev, action.playerId, 'not-your-turn');
+      s.lastPlayedBy = null;
 
       // Khi người này bắt đầu rút bài: nếu lượt trước có ai chưa bị bắt Ú Nồ, họ an toàn
       if (s.rushWindow && s.rushWindow.playerId !== action.playerId) {
@@ -1141,6 +1224,7 @@ function reduceCore(prev: GameState, action: Action, now: number): EngineResult 
       const pi = idx(s, action.playerId);
       if (pi < 0 || s.turn !== pi || !s.drawnThisTurn) return reject(prev, action.playerId, 'cannot-pass');
       if (s.drawRun) return reject(prev, action.playerId, 'drawing');
+      s.lastPlayedBy = null;
 
       if (s.rushWindow && s.rushWindow.playerId !== action.playerId) {
         const prevPi = idx(s, s.rushWindow.playerId);
@@ -1240,6 +1324,7 @@ function reduceCore(prev: GameState, action: Action, now: number): EngineResult 
       }
       const pi = idx(s, action.playerId);
       if (pi < 0 || s.turn !== pi) return reject(prev, action.playerId, 'not-your-turn');
+      if (!s.drawRun && now < s.turnDeadline - 200) return reject(prev, action.playerId, 'too-early');
       if (s.phase === 'awaitChain' && s.resume?.kind === 'chain') {
         const [a, b] = autoChainTargets(s, s.resume.playerId);
         return reduce(prev, { type: 'CHAIN', playerId: s.resume.playerId, a, b }, now);

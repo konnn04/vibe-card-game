@@ -251,6 +251,9 @@ function Shell() {
 
   /** Chơi offline với bot: engine chạy trong tab, không cần server. */
   const beginLocal = useCallback(() => {
+    if (useRoom.getState().rules.randomizeSeats) {
+      useRoom.getState().shuffleSeats();
+    }
     const seats = useRoom.getState().seats;
     const players = seats
       .map((s, i) => (s ? { id: s.id, name: s.name, isBot: s.isBot, team: (i % 2) as 0 | 1 } : null))
@@ -308,6 +311,10 @@ function Shell() {
       return;
     }
     useMatch.getState().act({ type: 'NEXT_ROUND' });
+    const nextState = useMatch.getState().state;
+    if (nextState && useRoom.getState().rules.randomizeSeats) {
+      useRoom.getState().syncSeatsFromPlayers(nextState.players.map((p) => p.id));
+    }
   }, [beginLocal]);
 
   const exit = useCallback(async () => {

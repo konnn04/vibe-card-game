@@ -15,9 +15,11 @@ import { DARK_COLORS, LIGHT_COLORS, colorsOf, face } from './palette';
  */
 export abstract class DeckMode {
   abstract readonly id: DeckType;
-  /** Số người tối thiểu / tối đa. Bắt đầu ván khi thiếu người thì thêm bot cho đủ `minPlayers`. */
-  readonly minPlayers: number = 2;
-  abstract readonly maxPlayers: number;
+  /** Số người tối thiểu / tối đa. Tất cả chế độ hỗ trợ 4-8 người chơi. */
+  readonly minPlayers: number = 4;
+  readonly maxPlayers: number = 8;
+  /** Số người tối đa dùng 1 bộ bài; vượt ngưỡng này sẽ tự động nhân đôi bộ bài. */
+  readonly singleDeckMaxPlayers: number = 4;
   /** Luật bị ép giá trị ở mode này — phòng chờ khoá công tắc tương ứng. */
   readonly forcedRules: Partial<Rules> = {};
   /**
@@ -31,7 +33,7 @@ export abstract class DeckMode {
   /** Luật mặc định khi chủ phòng CHỌN mode này (vẫn đổi được, khác forcedRules). */
   readonly defaultRules: Partial<Rules> = {};
   /** Điểm thưởng người thắng nhận cho MỖI người bị loại (vỡ trận) trong ván. */
-  readonly eliminationBonus: number = 0;
+  readonly eliminationBonus: number = 250;
   /**
    * Rút tới khi đánh được thì BẮT BUỘC đánh đúng lá vừa rút (khi luật
    * forcePlay bật). Mode khác: rút xong được đánh bất kỳ lá hợp lệ nào.
@@ -66,9 +68,17 @@ export abstract class DeckMode {
   /** Thành phần bộ bài — builder tự đánh id và xáo. */
   protected abstract compose(b: DeckBuilder): void;
 
-  buildDeck(seed: number): Card[] {
+  /** Số bộ bài cần dùng theo số lượng người chơi (tự nhân bộ bài khi đông người). */
+  deckCopies(playerCount = 4): number {
+    return playerCount > this.singleDeckMaxPlayers ? 2 : 1;
+  }
+
+  buildDeck(seed: number, playerCount = 4): Card[] {
     const b = new DeckBuilder(seed);
-    this.compose(b);
+    const copies = this.deckCopies(playerCount);
+    for (let i = 0; i < copies; i++) {
+      this.compose(b);
+    }
     return b.build();
   }
 
@@ -86,10 +96,10 @@ function composeClassic(b: DeckBuilder) {
     .add('wild', 'wild4', 4);
 }
 
-/** Ú Nồ cổ điển: 108 lá. */
+/** Ú Nồ cổ điển: 108 lá (trên 4 người tự nhân đôi thành 216 lá). */
 class ClassicMode extends DeckMode {
   readonly id = 'classic' as const;
-  readonly maxPlayers = 4;
+  readonly singleDeckMaxPlayers = 4;
   protected compose(b: DeckBuilder) {
     composeClassic(b);
   }
@@ -98,10 +108,11 @@ class ClassicMode extends DeckMode {
 /**
  * Ú Nồ Flip: 112 lá HAI MẶT — đúng bộ Flip thật: mỗi màu 1-9 x2 (không có lá
  * 0 ở cả 2 mặt), skip/reverse/draw1/flip x2, cộng 4 wild + 4 wild2.
+ * Trên 4 người tự nhân đôi thành 224 lá.
  */
 class FlipMode extends DeckMode {
   readonly id = 'flip' as const;
-  readonly maxPlayers = 4;
+  readonly singleDeckMaxPlayers = 4;
   protected compose(b: DeckBuilder) {
     for (const c of LIGHT_COLORS) {
       for (let v = 1; v <= 9; v++) b.addFlip(c, String(v) as CardValue, 2);
@@ -125,11 +136,11 @@ export function isDarkArt(card: Card, side: DeckSide): boolean {
 /**
  * Ú Nồ Hỗn loạn: bộ cổ điển + 104 lá Dark MỘT MẶT (4 màu Dark: 1-9 x2, Cấm cả
  * bàn/Đổi chiều/+5 x2) + 4 Đổi màu Dark + 4 Rút tới khi ra màu = 212 lá, 8 màu,
- * tới 8 người. Rút tới khi đánh được luôn tắt; tay bài vượt 36 lá là vỡ trận.
+ * 4-8 người. Rút tới khi đánh được luôn tắt; tay bài vượt 30 lá là vỡ trận.
  */
 class ChaosMode extends DeckMode {
   readonly id = 'chaos' as const;
-  readonly maxPlayers = 8;
+  readonly singleDeckMaxPlayers = 6;
   readonly forcedRules: Partial<Rules> = { drawToMatch: false };
   readonly eliminateOver = 30;
   protected compose(b: DeckBuilder) {
@@ -151,17 +162,16 @@ class ChaosMode extends DeckMode {
 }
 
 /**
- * Ú Nồ Party (bản Refresh 2025): 168 lá, 4-8 người. Chồng phạt và Đánh nhanh
- * (jump-in) luôn bật; đánh nhanh sai bài bị phạt rút 1 lá.
+ * Ú Nồ Party (bản Refresh 2025): 168 lá (trên 6 người tự nhân đôi thành 336 lá),
+ * 4-8 người. Chồng phạt và Đánh nhanh (jump-in) luôn bật.
  *   Lá số 76 (mỗi màu: 0 x1, 1-9 x2) · Cấm/Đổi chiều/+2 mỗi màu x2 (24)
  *   Đổi màu 16 · +4 12 · Chỉ tay 16 (4 mỗi màu) · Cọng xích 12 · 3 lá con 12.
  */
 class PartyMode extends DeckMode {
   readonly id = 'party' as const;
-  readonly minPlayers = 4;
-  readonly maxPlayers = 8;
+  readonly singleDeckMaxPlayers = 6;
   readonly forcedRules: Partial<Rules> = { stack: true, jumpIn: true };
-  readonly jumpInPenalty = 1;
+  readonly jumpInPenalty = 0;
   /**
    * Mô phỏng 8 bot: đúng luật gốc thì Cọng xích + 3 lá con + bầu Chỉ tay dìm
    * người sắp thắng tới mức ván dài ~26.000 lá (cổ điển: ~43). Bật vỡ trận ở
@@ -184,7 +194,8 @@ const NO_MERCY_DRAW: Partial<Record<CardValue, number>> = { draw2: 2, draw4: 4, 
 const NO_MERCY_WILDS = new Set<CardValue>(['wildRev4', 'wild6', 'wild10', 'wildRoulette']);
 
 /**
- * Ú Nồ No Mercy (UNO Show 'Em No Mercy): 168 lá, 2-6 người, không có Wild thường.
+ * Ú Nồ No Mercy (UNO Show 'Em No Mercy): 168 lá (trên 6 người tự nhân đôi thành
+ * 336 lá), 4-8 người, không có Wild thường.
  *   Số 0-9 x2 mỗi màu (80) · Cấm lượt/Đổi chiều/+2/Bỏ hết x3 mỗi màu (48)
  *   Cấm cả bàn/+4 màu x2 mỗi màu (16) · Wild Đảo chiều +4 8 · Wild +6 4 ·
  *   Wild +10 4 · Wild Color Roulette 8.
@@ -203,7 +214,7 @@ const NO_MERCY_WILDS = new Set<CardValue>(['wildRev4', 'wild6', 'wild10', 'wildR
  */
 class NoMercyMode extends DeckMode {
   readonly id = 'noMercy' as const;
-  readonly maxPlayers = 6;
+  readonly singleDeckMaxPlayers = 6;
   readonly forcedRules: Partial<Rules> = { drawToMatch: true, challenge: false };
   readonly defaultRules: Partial<Rules> = { sevenZero: true, stack: true, forcePlay: true, jumpIn: false };
   /** Mercy: ĐỦ 25 lá là bị loại, tức vượt 24. */
@@ -258,8 +269,8 @@ export function getMode(t: DeckType): DeckMode {
 /** Số ô ghế tối đa của mọi mode — mảng ghế của phòng luôn đủ chừng này ô. */
 export const MAX_SEATS = Math.max(...Object.values(MODES).map((m) => m.maxPlayers));
 
-export function buildDeck(type: DeckType, seed: number): Card[] {
-  return getMode(type).buildDeck(seed);
+export function buildDeck(type: DeckType, seed: number, playerCount = 4): Card[] {
+  return getMode(type).buildDeck(seed, playerCount);
 }
 
 export function maxPlayersFor(t: DeckType): number {
@@ -314,7 +325,7 @@ function blowUpDefaults(m: DeckMode): Pick<Rules, 'blowUp' | 'blowUpAt'> {
  */
 export function rulesForNewDeck(t: DeckType, rules: Rules): Rules {
   const m = getMode(t);
-  return normalizeRules(t, { ...rules, ...blowUpDefaults(m), ...m.defaultRules, maxPlayers: m.maxPlayers });
+  return normalizeRules(t, { ...rules, ...blowUpDefaults(m), ...m.defaultRules, maxPlayers: rules.maxPlayers });
 }
 
 /**

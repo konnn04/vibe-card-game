@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Ban, Users } from 'lucide-react';
-import { canPlay, colorsFor, hotkeyCard, RUSH_GRACE_MS, type GameState } from '@u-no/game-engine';
+import { canJumpIn, canPlay, canSameTurnStack, colorsFor, comboCardsFor, drawAmountOf, face, hotkeyCard, RUSH_GRACE_MS, type Card, type CardColor, type GameState } from '@u-no/game-engine';
 import { useMatch } from '@/src/state/match';
 import { useRoom } from '@/src/state/room';
 import { useTurnHold, useTurnStage } from '@/src/state/useTurnHold';
@@ -193,7 +193,10 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
   const myId = useMatch((s) => s.myId);
   const act = useMatch((s) => s.act);
   const fx = useMatch((s) => s.fx);
+  const hoveredCardId = useMatch((s) => s.hoveredCardId);
   const avatarPreset = useSettings((s) => s.avatarPreset);
+  const cardGuide = useSettings((s) => s.cardGuide);
+  const locale = useSettings((s) => s.locale);
   const animating = useTurnHold();
   const left = useSecondsLeft(state?.turnDeadline ?? 0, animating, state?.rules.turnSeconds ?? 20);
   const myChat = useChat((s) => s.messages[myId]);
@@ -253,11 +256,25 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
     // Luật nhà "bắt buộc đánh": còn lá đánh được thì nút Bỏ lượt bị khoá.
     !(state.rules.forcePlay && hasPlayable);
 
-  // Lá mà phím [S] sẽ đánh (đánh chen, hoặc chồng phạt) — tra từ engine để HUD
-  // và nhãn [S] trên bàn 3D không bao giờ chỉ hai lá khác nhau.
-  const sCard = !holding && state ? hotkeyCard(state, myId) : null;
+  // Lá mà phím [S] sẽ đánh (đánh chen, chồng phạt, hoặc đánh cặp 2 lá cùng màu cùng số trong lượt)
+  const sCard = (() => {
+    if (holding || !state) return null;
+    if (myTurn && !state.pending && !state.pileUp && !state.mustPlayCardId && hoveredCardId && me) {
+      const hc = me.hand.find((c) => c.id === hoveredCardId);
+      if (hc && canPlay(hc, state) && comboCardsFor(hc, me.hand, state.side).length > 0) {
+        return hc;
+      }
+    }
+    return hotkeyCard(state, myId);
+  })();
   const isJump = !!sCard && !myTurn;
-  const playS = () => { if (sCard) act({ type: 'PLAY', playerId: myId, cardId: sCard.id }); };
+  const comboTwins = sCard && myTurn && state && !state.pending && !state.pileUp && me
+    ? comboCardsFor(sCard, me.hand, state.side)
+    : [];
+  const isCombo = comboTwins.length > 0;
+  const playS = () => {
+    if (sCard) act({ type: 'PLAY', playerId: myId, cardId: sCard.id, combo: isCombo || undefined });
+  };
 
   const needDrawPrompt = myTurn && (!hasPlayable || !!state?.pending) && canDraw;
   const isChoosing =
@@ -760,7 +777,7 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
           )}
           {!!sCard && (
             <ActionButton tone='gold' pulse hotkey="S" isCompact={isMobile} onClick={playS}>
-              {isJump ? t('jumpIn') : t('stackUp')}
+              {isJump ? t('jumpIn') : isCombo ? t('playCombo', { n: comboTwins.length + 1 }) : t('stackUp')}
             </ActionButton>
           )}
           {canPass && (
@@ -828,6 +845,15 @@ export function GameHud({ onExit, onSettings }: { onExit: () => void; onSettings
           .map((p) => ({ id: p.id, name: p.id === myId ? t('you') : p.name, sub: t('cards', { n: p.hand.length }) }))}
         onConfirm={([a, b]) => act({ type: 'CHAIN', playerId: myId, a, b })}
       />
+      {cardGuide && !isChoosing && (
+        <CardGuideTooltip
+          state={state}
+          myId={myId}
+          hoveredCardId={hoveredCardId}
+          locale={locale}
+          isMobile={isMobile}
+        />
+      )}
       {showInfo && (
         <GameInfo rules={state.rules} deckType={state.deckType} onClose={() => setShowInfo(false)} />
       )}
@@ -917,6 +943,339 @@ const WHEEL_LABEL: Record<string, string> = {
   red: 'Red', yellow: 'Yellow', green: 'Green', blue: 'Blue',
   pink: 'Pink', orange: 'Orange', teal: 'Teal', purple: 'Purple',
 };
+
+const COLOR_NAME_VI: Record<string, string> = {
+  red: 'Đỏ', yellow: 'Vàng', green: 'Xanh lá', blue: 'Xanh dương',
+  pink: 'Hồng (Dark)', teal: 'Ngọc (Dark)', orange: 'Cam (Dark)', purple: 'Tím (Dark)',
+  wild: 'Đa sắc (Wild)',
+};
+
+const COLOR_NAME_EN: Record<string, string> = {
+  red: 'Red', yellow: 'Yellow', green: 'Green', blue: 'Blue',
+  pink: 'Pink (Dark)', teal: 'Teal (Dark)', orange: 'Orange (Dark)', purple: 'Purple (Dark)',
+  wild: 'Wild',
+};
+
+function describeHoveredCard(state: GameState, myId: string, card: Card, isDiscardTop: boolean, locale: 'vi' | 'en') {
+  const vi = locale === 'vi';
+  const side = isDiscardTop ? (state.playedSide?.[card.id] ?? state.side) : state.side;
+  const f = face(card, side);
+  const effColor: CardColor = f.color === 'wild' ? (state.wildColors?.[card.id] ?? 'wild') : f.color;
+  const colorLabel = (vi ? COLOR_NAME_VI : COLOR_NAME_EN)[effColor] ?? effColor;
+  const hex = COLOR_HEX[effColor === 'wild' ? state.activeColor : effColor] ?? '#FFD34D';
+
+  const meIdx = state.players.findIndex((p) => p.id === myId);
+  const me = meIdx >= 0 ? state.players[meIdx] : undefined;
+  const myTurn = state.turn === meIdx && state.phase === 'awaitPlay';
+  const activePlayers = state.players.filter((p) => !p.eliminated).length;
+
+  let title = '';
+  let effect = '';
+  const notes: string[] = [];
+
+  switch (f.value) {
+    case '0':
+      title = vi ? `Lá số 0 · ${colorLabel}` : `Number 0 · ${colorLabel}`;
+      if (state.rules.sevenZero) {
+        effect = vi
+          ? 'Đánh khi trùng màu hoặc cùng số 0. Luật 0-7 đang BẬT: Khi đánh ra, tất cả người chơi trên bàn sẽ chuyền toàn bộ tay bài cho người kế tiếp theo chiều đang chơi!'
+          : 'Play on matching color or 0. 0-7 Rule is ON: Playing this rotates everyone’s hand to the next player in the current turn direction!';
+      } else {
+        effect = vi
+          ? 'Lá số thường: Đánh khi trùng màu hoặc trùng số 0 với lá trên bàn (Luật 0-7 đang tắt nên không chuyền bài).'
+          : 'Standard number card: Play on matching color or number 0 (0-7 Rule is off, so hands do not rotate).';
+      }
+      break;
+    case '7':
+      title = vi ? `Lá số 7 · ${colorLabel}` : `Number 7 · ${colorLabel}`;
+      if (state.rules.sevenZero) {
+        effect = vi
+          ? 'Đánh khi trùng màu hoặc cùng số 7. Luật 0-7 đang BẬT: Khi đánh ra, bạn được chọn 1 người chơi bất kỳ để đổi toàn bộ tay bài với họ!'
+          : 'Play on matching color or 7. 0-7 Rule is ON: Playing this lets you pick any player and swap your entire hand with theirs!';
+      } else {
+        effect = vi
+          ? 'Lá số thường: Đánh khi trùng màu hoặc trùng số 7 với lá trên bàn (Luật 0-7 đang tắt nên không đổi bài).'
+          : 'Standard number card: Play on matching color or number 7 (0-7 Rule is off, so hands do not swap).';
+      }
+      break;
+    case 'skip':
+      title = vi ? `Cấm lượt (Skip) · ${colorLabel}` : `Skip · ${colorLabel}`;
+      effect = vi
+        ? 'Đánh khi trùng màu hoặc trùng biểu tượng Cấm lượt. Người kế tiếp bị mất lượt ngay lập tức.'
+        : 'Play on matching color or another Skip. The next player loses their turn immediately.';
+      break;
+    case 'skipAll':
+      title = vi ? `Cấm cả bàn (Skip All) · ${colorLabel}` : `Skip Everyone · ${colorLabel}`;
+      effect = vi
+        ? 'Bỏ qua lượt của TẤT CẢ người chơi khác trên bàn — lượt quay về lại chính bạn để đánh tiếp!'
+        : 'Skips ALL other players at the table — the turn comes right back to you to play again!';
+      break;
+    case 'reverse':
+      title = vi ? `Đổi chiều (Reverse) · ${colorLabel}` : `Reverse · ${colorLabel}`;
+      effect = activePlayers === 2
+        ? (vi
+            ? 'Đảo ngược chiều đánh. Vì bàn chỉ còn 2 người chơi nên lá này hoạt động như Cấm lượt — bạn được đánh tiếp!'
+            : 'Reverses turn direction. With only 2 players left, this acts like a Skip — you play again!')
+        : (vi
+            ? 'Đảo ngược chiều vòng đánh của bàn chơi (thuận <-> ngược chiều kim đồng hồ).'
+            : 'Reverses the direction of play around the table.');
+      break;
+    case 'flip': {
+      title = vi ? `Lật bàn (Flip) · ${colorLabel}` : `Flip · ${colorLabel}`;
+      const otherSide = side === 'light' ? 'dark' : 'light';
+      const backF = face(card, otherSide);
+      const backColor = (vi ? COLOR_NAME_VI : COLOR_NAME_EN)[backF.color] ?? backF.color;
+      effect = vi
+        ? `Lật toàn bộ bài trên tay mọi người, chồng rút và chồng bỏ sang mặt ${otherSide === 'dark' ? 'Tối (Dark)' : 'Sáng (Light)'}. (Mặt sau của lá này là: ${backF.value} · ${backColor}).`
+        : `Flips all hands, draw pile, and discard pile to the ${otherSide === 'dark' ? 'Dark' : 'Light'} side. (Opposite side of this card: ${backF.value} · ${backColor}).`;
+      break;
+    }
+    case 'draw1':
+    case 'draw2':
+    case 'draw4':
+    case 'draw5': {
+      const n = drawAmountOf(f.value);
+      title = vi ? `Rút +${n} · ${colorLabel}` : `Draw +${n} · ${colorLabel}`;
+      effect = vi
+        ? `Buộc người kế tiếp phải rút ${n} lá bài phạt và mất lượt.`
+        : `Forces the next player to draw ${n} penalty cards and lose their turn.`;
+      if (state.rules.stack) {
+        notes.push(
+          vi
+            ? (state.deckType === 'noMercy'
+                ? `Luật Chồng bài đang BẬT: Có thể chồng lá rút có giá trị >= lá phạt trước đó${state.pending && state.pending.value !== 'drawColor' ? ` (đánh lá này sẽ dồn thành +${state.pending.amount + n})` : ''}.`
+                : `Luật Chồng bài đang BẬT: Có thể chồng tiếp lá rút cùng cấp hoặc mạnh hơn để dồn phạt cho người sau${state.pending && state.pending.value !== 'drawColor' ? ` (tổng phạt lên +${state.pending.amount + n})` : ''}.`)
+            : `Stacking is ON: Can be stacked to pass a combined penalty to the next player${state.pending && state.pending.value !== 'drawColor' ? ` (total becomes +${state.pending.amount + n})` : ''}.`,
+        );
+      }
+      break;
+    }
+    case 'wild':
+      title = vi ? 'Đổi màu (Wild)' : 'Wild Card';
+      effect = vi
+        ? 'Đánh được lên bất kỳ màu nào (trừ khi đang phải đỡ chuỗi phạt +N). Bạn được tự chọn màu hiệu lực tiếp theo cho bàn chơi.'
+        : 'Can be played on any color (unless facing a penalty stack). You choose the next active color.';
+      break;
+    case 'wild2':
+    case 'wild4': {
+      const n = f.value === 'wild2' ? 2 : 4;
+      title = vi ? `Đổi màu +${n} (Wild +${n})` : `Wild Draw +${n}`;
+      effect = vi
+        ? `Chọn màu hiệu lực mới và buộc người kế tiếp rút +${n} lá & mất lượt.`
+        : `Choose the next active color and force the next player to draw +${n} cards and lose their turn.`;
+      if (state.rules.challenge && me && !isDiscardTop) {
+        const hasActiveColor = me.hand.some((c) => c.id !== card.id && face(c, state.side).color === state.activeColor);
+        notes.push(
+          hasActiveColor
+            ? (vi
+                ? '⚠️ Luật Bắt lỗi đang BẬT: Bạn đang có lá trùng màu hiện tại trên tay — nếu đánh lá này mà bị đối thủ Bắt lỗi (Challenge), bạn sẽ bị phạt rút thay!'
+                : '⚠️ Challenge Rule is ON: You hold a card matching the current color — if challenged, you will take the penalty!')
+            : (vi
+                ? '✓ Luật Bắt lỗi đang BẬT: Trên tay bạn không có màu hiện tại — đánh lá này hoàn toàn hợp lệ, ai bắt lỗi sẽ bị phạt thêm +2 lá!'
+                : '✓ Challenge Rule is ON: You have no matching color in hand — playing this is 100% legal!'),
+        );
+      }
+      break;
+    }
+    case 'wildRev4':
+      title = vi ? 'Wild Đảo chiều +4' : 'Wild Reverse +4';
+      effect = vi
+        ? 'Đảo ngược chiều đánh TRƯỚC, chọn màu mới và phạt người kế tiếp theo chiều mới phải rút +4 lá (nếu chỉ còn 2 người thì phạt thẳng đối thủ).'
+        : 'Reverses direction FIRST, chooses a new color, and forces the next player in the new direction to draw +4 cards.';
+      break;
+    case 'wild6':
+    case 'wild10': {
+      const n = f.value === 'wild6' ? 6 : 10;
+      title = vi ? `Siêu phạt Wild +${n}` : `Wild Draw +${n}`;
+      effect = vi
+        ? `Chọn màu hiệu lực mới và giáng đòn phạt cực nặng +${n} lá cho người kế tiếp (có thể dùng để chồng đè lên các lá rút nhỏ hơn).`
+        : `Choose the next active color and deal a massive +${n} card penalty to the next player (can stack on smaller draw cards).`;
+      break;
+    }
+    case 'wildColor':
+      title = vi ? 'Rút tới khi ra màu (Wild Draw Color)' : 'Wild Draw Color';
+      effect = vi
+        ? 'Bạn chọn 1 màu Dark; người kế tiếp phải rút bài liên tục từng lá cho tới khi rút trúng lá có màu bạn đã chọn rồi mất lượt!'
+        : 'Choose a Dark color; the next player must keep drawing one by one until they draw a card of that color, then lose their turn!';
+      break;
+    case 'wildRoulette':
+      title = vi ? 'Vòng xoay màu (Color Roulette)' : 'Wild Color Roulette';
+      effect = vi
+        ? 'Người kế tiếp tự chọn 1 màu, sau đó phải lật rút bài liên tục cho tới khi ra lá có màu đó (lá Wild không tính) và mất lượt!'
+        : 'The next player picks a color, then must keep drawing cards until they reveal a card of that color (Wilds do not count) and lose their turn!';
+      break;
+    case 'discardAll': {
+      title = vi ? `Bỏ hết cùng màu · ${colorLabel}` : `Discard All · ${colorLabel}`;
+      const sameCount = me && !isDiscardTop
+        ? me.hand.filter((c) => face(c, state.side).color === f.color).length
+        : 1;
+      effect = vi
+        ? `Khi đánh ra, TẤT CẢ các lá màu ${colorLabel} đang có trên tay bạn sẽ được xả hết xuống bàn cùng một lúc (${sameCount} lá)!`
+        : `When played, ALL ${colorLabel} cards in your hand are discarded onto the pile at once (${sameCount} card(s))!`;
+      break;
+    }
+    case 'pointTaken':
+      title = vi ? `Chỉ tay (Point Taken) · ${colorLabel}` : `Point Taken · ${colorLabel}`;
+      effect = vi
+        ? 'Phá bỏ Cọng xích hiện có và mở vòng bầu chọn đồng loạt: mọi người cùng chỉ tay vào 1 đối thủ; ai bị chỉ bao nhiêu phiếu phải rút bấy nhiêu lá (tối đa 5 lá)!'
+        : 'Breaks any active Chain and opens a simultaneous vote: everyone points at a player, and each player draws 1 card per vote received (up to 5)!';
+      break;
+    case 'wildTogether':
+      title = vi ? 'Cọng xích liên kết (Drawn Together)' : 'Wild Drawn Together';
+      effect = vi
+        ? 'Chọn màu mới và khoá xích 2 người chơi với nhau: mỗi khi 1 trong 2 người phải rút bài, người kia sẽ bị kéo rút theo đúng số lá đó (cho tới khi có lá Chỉ tay hoặc hết ván)!'
+        : 'Choose a color and chain 2 players together: whenever either chained player draws cards, the other automatically draws the exact same amount!';
+      break;
+    case 'wildPileUp':
+      title = vi ? '3 lá con (Wild Pile Up)' : 'Wild Pile Up';
+      effect = vi
+        ? 'Chọn màu và lật 1 lá mồi mở chồng bài phụ: lần lượt từng người chỉ được đánh bài đúng màu đó vào chồng phụ; ai không đánh được phải ôm toàn bộ chồng phụ về tay!'
+        : 'Choose a color and start a mini-pile: players must play cards of that color onto the side pile, or take the entire side pile into their hand!';
+      break;
+    default: {
+      title = vi ? `Lá số ${f.value} · ${colorLabel}` : `Number ${f.value} · ${colorLabel}`;
+      effect = vi
+        ? `Đánh ra khi trên bàn đang là màu ${colorLabel} hoặc đang có lá số ${f.value} ở trên cùng.`
+        : `Play when the active color is ${colorLabel} or the top card is also a ${f.value}.`;
+      break;
+    }
+  }
+
+  if (!isDiscardTop && me && /^\d$/.test(f.value)) {
+    const twins = comboCardsFor(card, me.hand, state.side);
+    if (twins.length > 0) {
+      notes.push(
+        vi
+          ? `💡 Đánh cặp (Stack): Bạn đang có ${twins.length + 1} lá giống hệt (${f.value} ${colorLabel}) — trong lượt có thể bấm trực tiếp vào bài để đánh 1 lá, hoặc bấm [S] để đánh lần cả ${twins.length + 1} lá!`
+          : `💡 Pair Stack: You hold ${twins.length + 1} identical (${f.value} ${colorLabel}) cards — click the card to play 1, or press [S] on your turn to play all ${twins.length + 1} at once!`,
+      );
+    }
+    if (state.rules.jumpIn) {
+      notes.push(
+        vi
+          ? '⚡ Luật Đánh chen (Jump-In) đang BẬT: Nếu lá trên đỉnh chồng bỏ trùng hệt cả màu lẫn số với lá này, bạn có thể đánh cướp lượt bất cứ lúc nào!'
+          : '⚡ Jump-In is ON: If the top discard card has the exact same color and number, you can jump in out of turn!',
+      );
+    }
+  }
+
+  let statusText = '';
+  let statusOk = false;
+  if (isDiscardTop) {
+    statusText = vi ? 'Lá đang nằm trên đỉnh bàn chơi' : 'Current top card on the discard pile';
+    statusOk = true;
+  } else if (myTurn && canPlay(card, state)) {
+    statusText = vi ? '✓ Có thể đánh ngay trong lượt này' : '✓ Playable right now on your turn';
+    statusOk = true;
+  } else if (!myTurn && (canJumpIn(card, state) || canSameTurnStack(card, state, myId))) {
+    statusText = vi ? '⚡ Có thể đánh chồng / chen ngay [S]!' : '⚡ Can stack / jump-in right now [S]!';
+    statusOk = true;
+  } else {
+    statusText = vi ? 'Chưa thể đánh lúc này' : 'Cannot be played right now';
+    statusOk = false;
+  }
+
+  return { title, effect, notes, statusText, statusOk, hex };
+}
+
+function CardGuideTooltip({
+  state,
+  myId,
+  hoveredCardId,
+  locale,
+  isMobile,
+}: {
+  state: GameState;
+  myId: string;
+  hoveredCardId: string | null;
+  locale: 'vi' | 'en';
+  isMobile: boolean;
+}) {
+  const [readyCardId, setReadyCardId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setReadyCardId(null);
+    if (!hoveredCardId) return;
+    // Chỉ hiện khung giải thích khi người chơi giữ chuột (hover) trên lá bài quá 2 giây (2000ms)
+    const timer = setTimeout(() => {
+      setReadyCardId(hoveredCardId);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [hoveredCardId]);
+
+  if (!readyCardId || readyCardId !== hoveredCardId) return null;
+
+  const me = state.players.find((p) => p.id === myId);
+  const topDiscard = state.discard[state.discard.length - 1];
+  const inHand = me?.hand.find((c) => c.id === readyCardId);
+  const isDiscardTop = !inHand && topDiscard?.id === readyCardId;
+  const card = inHand ?? (isDiscardTop ? topDiscard : undefined);
+  if (!card) return null;
+
+  const info = describeHoveredCard(state, myId, card, isDiscardTop, locale);
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        key={readyCardId}
+        initial={{ opacity: 0, y: 10, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 8, scale: 0.96 }}
+        transition={{ duration: 0.2 }}
+        className="pointer-events-none absolute left-1/2 z-40 -translate-x-1/2"
+        style={{
+          bottom: isMobile ? 175 : 390,
+          width: isMobile ? 'min(88vw, 380px)' : 'min(90vw, 440px)',
+        }}
+      >
+        <div
+          className="rounded-xl border px-4 py-3 shadow-2xl backdrop-blur-md"
+          style={{
+            background: 'linear-gradient(160deg, rgba(22, 12, 34, 0.96) 0%, rgba(12, 6, 20, 0.98) 100%)',
+            borderColor: `${info.hex}88`,
+            boxShadow: `0 12px 32px rgba(0,0,0,0.85), 0 0 20px ${info.hex}33`,
+          }}
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-1.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="inline-block h-3 w-3 shrink-0 rounded-sm shadow"
+                style={{ backgroundColor: info.hex }}
+              />
+              <span className="display truncate text-[15px] sm:text-[17px] text-[#FFF3DA]">
+                {info.title}
+              </span>
+            </div>
+            <span
+              className="shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold"
+              style={
+                info.statusOk
+                  ? { background: 'rgba(55, 166, 74, 0.25)', color: '#86EFAC', border: '1px solid rgba(134, 239, 172, 0.4)' }
+                  : { background: 'rgba(255, 255, 255, 0.08)', color: '#C6A6F0', border: '1px solid rgba(255, 255, 255, 0.12)' }
+              }
+            >
+              {info.statusText}
+            </span>
+          </div>
+
+          <p className="mt-2 text-[12px] sm:text-[13px] font-medium leading-relaxed text-[#EDE0FA]">
+            {info.effect}
+          </p>
+
+          {info.notes.length > 0 && (
+            <div className="mt-2 flex flex-col gap-1 border-t border-white/10 pt-1.5">
+              {info.notes.map((n, idx) => (
+                <div key={idx} className="text-[11px] sm:text-[12px] font-semibold leading-snug text-[#FFD34D]">
+                  {n}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
 
 export { ColorWheel, SwapPicker };
 

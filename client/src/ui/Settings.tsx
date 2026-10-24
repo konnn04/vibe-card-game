@@ -103,6 +103,41 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </div>
         </Section>
 
+        <Section title={t('cardGuide')}>
+          <button
+            type="button"
+            onClick={() => {
+              playSfx('click');
+              s.set('cardGuide', !s.cardGuide);
+            }}
+            className="flex w-full items-center justify-between gap-4 rounded-xl p-3.5 text-left transition hover:brightness-110 cursor-pointer"
+            style={
+              s.cardGuide
+                ? { background: 'linear-gradient(140deg,rgba(255,211,77,.24),rgba(255,158,44,.14))', border: '2px solid #FFD34D' }
+                : { background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.16)' }
+            }
+          >
+            <div>
+              <div className="display text-[19px]" style={{ color: s.cardGuide ? '#FFD34D' : '#EDE0FA' }}>
+                {s.cardGuide ? t('cardGuideOn') : t('cardGuideOff')}
+              </div>
+              <div className="mt-0.5 text-[12px] font-semibold leading-snug text-[#A48AC8]">
+                {t('cardGuideDesc')}
+              </div>
+            </div>
+            <span
+              className="display shrink-0 rounded-lg px-3 py-1 text-[14px]"
+              style={
+                s.cardGuide
+                  ? { background: '#FFD34D', color: '#2A1508' }
+                  : { background: 'rgba(255,255,255,.12)', color: '#A48AC8' }
+              }
+            >
+              {s.cardGuide ? 'ON' : 'OFF'}
+            </span>
+          </button>
+        </Section>
+
         <Section title={t('graphics')}>
           <div className="grid grid-cols-3 gap-2.5">
             {(['low', 'medium', 'high'] as Graphics[]).map((g) => (
